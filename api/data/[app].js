@@ -1,5 +1,5 @@
 import { applications, generatedAt } from "../../lib/demo-data.js";
-import { readDataset, validateRecords, writeDataset } from "../../lib/persistence.js";
+import { persistenceMode, readDataset, validateRecords, writeDataset } from "../../lib/persistence.js";
 import { authenticateApplication, authenticateGateway, beginRequest, publicApplication, sendError, unauthorized } from "../../lib/http-api.js";
 
 export default async function handler(request, response) {
@@ -17,16 +17,15 @@ export default async function handler(request, response) {
     const invalid = validateRecords(records);
     if (invalid) return sendError(response, 400, "INVALID_RECORDS", invalid, gate.requestId);
     const saved = await writeDataset(appId, { ...dataset, records });
-    return response.status(200).json({ application: publicApplication(application), generatedAt: generatedAt(), ...saved, persistence: "durable-when-kv-configured", lineage: { sourceId: appId, requestId: gate.requestId } });
+    return response.status(200).json({ application: publicApplication(application), generatedAt: generatedAt(), ...saved, persistence: persistenceMode, lineage: { sourceId: appId, requestId: gate.requestId } });
   }
 
   const scheme = appId === "sap-s4" ? "Basic" : ["manhattan-wms", "mulesoft-events"].includes(appId) ? "ApiKey" : "Bearer";
-  if (!authenticateApplication(request, appId)) return unauthorized(response, gate.requestId, scheme);
+  if (!(await authenticateApplication(request, appId))) return unauthorized(response, gate.requestId, scheme);
 
-  const data = dataset;
   return response.status(200).json({
     application: publicApplication(application),
-    ...data,
+    ...dataset,
     lineage: { sourceId: appId, environment: "Maison Lumen Demo", synthetic: true, requestId: gate.requestId },
   });
 }
