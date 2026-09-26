@@ -13,7 +13,7 @@ export default async function handler(request, response) {
   if (!ctx.ok) return;
   const url = new URL(request.url || "/api/soap", "https://maison-lumen-si.vercel.app");
   if (request.method === "GET" && url.searchParams.has("wsdl")) { response.setHeader("Content-Type", "text/xml; charset=utf-8"); return response.status(200).send(WSDL); }
-  if (!authenticateApplication(request, "legacy-soap")) return unauthorized(response, ctx.requestId, "Basic");
+  if (!(await authenticateApplication(request, "legacy-soap"))) return unauthorized(response, ctx.requestId, "Basic");
   const payload = typeof request.body === "string" ? request.body : "";
   if (payload && !/GetPurchaseOrders|PurchaseOrder/i.test(payload)) return sendError(response, 400, "SOAP_ACTION_NOT_SUPPORTED", "Use GetPurchaseOrders.", ctx.requestId);
   const dataset = await readDataset("sap-s4");

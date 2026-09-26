@@ -1,10 +1,10 @@
-import { beginRequest, authenticateGateway, sendError, unauthorized } from "../lib/http-api.js";
+import { beginRequest, authenticateApplication, sendError, unauthorized } from "../lib/http-api.js";
 import { readDataset, writeDataset } from "../lib/persistence.js";
 
 export default async function handler(request, response) {
   const ctx = beginRequest(request, response, ["GET", "POST"]);
   if (!ctx.ok) return;
-  if (!authenticateGateway(request)) return unauthorized(response, ctx.requestId, "Bearer");
+  if (!(await authenticateApplication(request, "webhook-gateway"))) return unauthorized(response, ctx.requestId, "ApiKey");
   const stored = await readDataset("webhook-inbox");
   const records = Array.isArray(stored?.records) ? stored.records : [];
   if (request.method === "GET") return response.status(200).json({ protocol: "webhook", deliveries: records, requestId: ctx.requestId });
