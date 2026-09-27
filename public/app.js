@@ -16,10 +16,10 @@ function activeConfig(id) {
 
 async function sourceHeaders(id) {
   const auth = activeConfig(id).auth || {};
-  if (id === "sap-s4" || id === "legacy-soap") return { Authorization: `Basic ${btoa(`${auth.username || ""}:${auth.password || ""}`)}`, "X-Lumen-Tenant": auth.tenant || "" };
+  if (id === "sap-s4" || id === "legacy-soap") return { Authorization: `Basic ${btoa(`${auth.username || ""}:${auth.password || ""}`)}`, "X-Lucie-Tenant": auth.tenant || "" };
   if (id === "manhattan-wms") return { "X-API-Key": auth.apiKey || "" };
   if (id === "coupa-risk") return { Authorization: `Bearer ${auth.token || ""}` };
-  if (id === "snowflake-demand") return { Authorization: `Bearer ${auth.privateKey || auth.token || ""}`, "X-Lumen-Account": auth.account || "", "X-Lumen-Warehouse": auth.warehouse || "", "X-Lumen-Role": auth.role || "" };
+  if (id === "snowflake-demand") return { Authorization: `Bearer ${auth.privateKey || auth.token || ""}`, "X-Lucie-Account": auth.account || "", "X-Lucie-Warehouse": auth.warehouse || "", "X-Lucie-Role": auth.role || "" };
   if (id === "mulesoft-events" || id === "kafka-stream" || id === "webhook-gateway") return { "X-Client-Id": auth.clientId || "", "X-Client-Secret": auth.clientSecret || "" };
   if (id === "rest-order-management") return { Authorization: `Bearer ${auth.token || ""}` };
   if (id === "blueyonder-tms") {
@@ -105,7 +105,7 @@ async function saveRecords() {
 
 async function refreshSignals() {
   try {
-    const alerts = await getJson("/api/alerts", { headers: { Authorization: "Bearer lumen_aura_gateway_demo_token" } });
+    const alerts = await getJson("/api/alerts", { headers: { Authorization: "Bearer lucie_aura_gateway_demo_token" } });
     renderSignals(alerts.alerts, alerts.generatedAt);
   } catch (error) { document.querySelector("#signals").innerHTML = `<p>Alertes indisponibles · ${clean(error.message)}</p>`; }
 }
