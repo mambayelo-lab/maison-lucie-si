@@ -2,8 +2,8 @@
 
 Executable, synthetic information system for the **Aura Supply Chain Resilience Agent**.
 
-**Live portal:** https://maison-lumen-si.vercel.app  
-**OpenAPI discovery:** https://maison-lumen-si.vercel.app/api/openapi
+**Live portal:** https://maison-lucie-si.vercel.app  
+**OpenAPI discovery:** https://maison-lucie-si.vercel.app/api/openapi
 
 The project exposes six coherent source applications, deterministic alerts, governed CSV exports and a cursor-based CloudEvents 1.0 feed. Vendor names only identify familiar integration patterns; no vendor product or real customer data is embedded.
 
@@ -20,7 +20,7 @@ The project exposes six coherent source applications, deterministic alerts, gove
 
 | Endpoint | Authentication | Purpose |
 |---|---|---|
-| `GET /api/data/sap-s4` | Basic + `X-Lumen-Tenant` | Purchase orders |
+| `GET /api/data/sap-s4` | Basic + `X-Lucie-Tenant` | Purchase orders |
 | `GET /api/data/manhattan-wms` | `X-API-Key` | Inventory positions |
 | `POST /api/token` then `GET /api/data/blueyonder-tms` | OAuth2 client credentials | Shipments |
 | `GET /api/data/coupa-risk` | Bearer | Supplier risk |
@@ -39,14 +39,14 @@ All credentials committed in this repository are deliberately non-sensitive demo
 ```bash
 curl -H 'X-Client-Id: aura-demo-client' \
   -H 'X-Client-Secret: DEMO-ONLY' \
-  'https://maison-lumen-si.vercel.app/api/events?cursor=0&limit=50'
+  'https://maison-lucie-si.vercel.app/api/events?cursor=0&limit=50'
 ```
 
 ## CSV exports
 
 ```bash
-curl -H 'X-API-Key: lumen_files_demo_key' \
-  https://maison-lumen-si.vercel.app/api/files/demand-forecast.csv
+curl -H 'X-API-Key: lucie_files_demo_key' \
+  https://maison-lucie-si.vercel.app/api/files/demand-forecast.csv
 ```
 
 Available files: `demand-forecast.csv` and `supplier-scorecard.csv`.
