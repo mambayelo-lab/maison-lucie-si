@@ -1,4 +1,4 @@
-# Maison Lumen SI
+# Maison Lucie SI
 
 Executable, synthetic information system for the **Aura Supply Chain Resilience Agent**.
 

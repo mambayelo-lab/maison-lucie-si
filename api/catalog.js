@@ -14,7 +14,7 @@ export default async function handler(request, response) {
     const configs = await readAllApplicationConfigs();
     const audit = await readAudit();
     return response.status(200).json({
-      environment: "Maison Lumen Demo",
+      environment: "Maison Lucie Demo",
       synthetic: true,
       generatedAt: generatedAt(),
       persistence: persistenceMode,
@@ -33,7 +33,7 @@ export default async function handler(request, response) {
 
   if (!authenticateGateway(request)) return unauthorized(response, gate.requestId);
   const appId = String(request.body?.appId || "");
-  if (!applications.some(app => app.id === appId)) return sendError(response, 404, "UNKNOWN_APPLICATION", "Unknown Maison Lumen application.", gate.requestId, { appId });
+  if (!applications.some(app => app.id === appId)) return sendError(response, 404, "UNKNOWN_APPLICATION", "Unknown Maison Lucie application.", gate.requestId, { appId });
 
   if (request.method === "POST" && request.body?.action === "reset") {
     const config = await resetApplicationConfig(appId);
