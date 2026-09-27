@@ -28,9 +28,9 @@ async function invoke(handler, { method = "GET", query = {}, headers = {}, body,
 
 function expect(condition, message) { if (!condition) throw new Error(message); }
 
-const GATEWAY = { authorization: "Bearer lumen_aura_gateway_demo_token" };
+const GATEWAY = { authorization: "Bearer lucie_aura_gateway_demo_token" };
 const CLIENT = { "x-client-id": "aura-demo-client", "x-client-secret": "DEMO-ONLY" };
-const ERP_AUTH = `Basic ${Buffer.from("aura_demo:LUMEN-DEMO-ONLY").toString("base64")}`;
+const ERP_AUTH = `Basic ${Buffer.from("aura_demo:LUCIE-DEMO-ONLY").toString("base64")}`;
 
 const health = await invoke(healthHandler);
 expect(health.statusCode === 200 && health.payload.status === "ok", "Health contract failed");
@@ -46,26 +46,26 @@ expect(noAuth.statusCode === 401, "Source endpoint must enforce authentication")
 const erp = await invoke(dataHandler, { query: { app: "sap-s4" }, headers: { authorization: ERP_AUTH, "x-lumen-tenant": "lumen-fr-100" } });
 expect(erp.statusCode === 200 && erp.payload.records.length >= 1, "ERP authenticated contract failed");
 
-const wms = await invoke(dataHandler, { query: { app: "manhattan-wms" }, headers: { "x-api-key": "lumen_wms_demo_key" } });
+const wms = await invoke(dataHandler, { query: { app: "manhattan-wms" }, headers: { "x-api-key": "lucie_wms_demo_key" } });
 expect(wms.statusCode === 200, "WMS authenticated contract failed");
 const originalRecords = wms.payload.records;
 const changedRecords = originalRecords.map((row, index) => index === 0 ? { ...row, available: Number(row.available) + 7 } : row);
 const patched = await invoke(dataHandler, { method: "PATCH", query: { app: "manhattan-wms" }, headers: { ...GATEWAY, "content-type": "application/json" }, body: { records: changedRecords } });
 expect(patched.statusCode === 200, "Dataset PATCH failed");
-const reread = await invoke(dataHandler, { query: { app: "manhattan-wms" }, headers: { "x-api-key": "lumen_wms_demo_key" } });
+const reread = await invoke(dataHandler, { query: { app: "manhattan-wms" }, headers: { "x-api-key": "lucie_wms_demo_key" } });
 expect(reread.payload.records[0].available === changedRecords[0].available, "Patched SI value must be visible on the next read");
 await invoke(dataHandler, { method: "PATCH", query: { app: "manhattan-wms" }, headers: { ...GATEWAY, "content-type": "application/json" }, body: { records: originalRecords } });
 
-const changedKey = "lumen_wms_rotated_demo_key";
+const changedKey = "lucie_wms_rotated_demo_key";
 const configPatch = await invoke(catalogHandler, { method: "PATCH", headers: { ...GATEWAY, "content-type": "application/json" }, body: { appId: "manhattan-wms", patch: { auth: { apiKey: changedKey } } } });
 expect(configPatch.statusCode === 200 && configPatch.payload.config.auth.apiKey === changedKey, "Connection configuration PATCH failed");
-const oldKeyRead = await invoke(dataHandler, { query: { app: "manhattan-wms" }, headers: { "x-api-key": "lumen_wms_demo_key" } });
+const oldKeyRead = await invoke(dataHandler, { query: { app: "manhattan-wms" }, headers: { "x-api-key": "lucie_wms_demo_key" } });
 expect(oldKeyRead.statusCode === 401, "Old credential must stop working after rotation");
 const newKeyRead = await invoke(dataHandler, { query: { app: "manhattan-wms" }, headers: { "x-api-key": changedKey } });
 expect(newKeyRead.statusCode === 200, "Rotated credential must be used by the application API");
 await invoke(catalogHandler, { method: "POST", headers: { ...GATEWAY, "content-type": "application/json" }, body: { appId: "manhattan-wms", action: "reset" } });
 
-const token = await invoke(tokenHandler, { method: "POST", body: "grant_type=client_credentials&client_id=aura-lumen-demo&client_secret=DEMO-NOT-A-SECRET" });
+const token = await invoke(tokenHandler, { method: "POST", body: "grant_type=client_credentials&client_id=aura-lucie-demo&client_secret=DEMO-NOT-A-SECRET" });
 expect(token.statusCode === 200 && token.payload.token_type === "Bearer", "OAuth token contract failed");
 const tms = await invoke(dataHandler, { query: { app: "blueyonder-tms" }, headers: { authorization: `Bearer ${token.payload.access_token}` } });
 expect(tms.statusCode === 200, "TMS authenticated contract failed");

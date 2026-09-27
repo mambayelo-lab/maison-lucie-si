@@ -9,7 +9,7 @@ export default async function handler(request, response) {
   const appId = String(request.query?.app || "");
   const application = applications.find(item => item.id === appId);
   const dataset = await readDataset(appId);
-  if (!application || !dataset) return sendError(response, 404, "UNKNOWN_APPLICATION", "Unknown Maison Lumen application.", gate.requestId, { appId });
+  if (!application || !dataset) return sendError(response, 404, "UNKNOWN_APPLICATION", "Unknown Maison Lucie application.", gate.requestId, { appId });
 
   if (request.method === "PATCH") {
     if (!authenticateGateway(request)) return unauthorized(response, gate.requestId);
@@ -26,6 +26,6 @@ export default async function handler(request, response) {
   return response.status(200).json({
     application: publicApplication(application),
     ...dataset,
-    lineage: { sourceId: appId, environment: "Maison Lumen Demo", synthetic: true, requestId: gate.requestId },
+    lineage: { sourceId: appId, environment: "Maison Lucie Demo", synthetic: true, requestId: gate.requestId },
   });
 }

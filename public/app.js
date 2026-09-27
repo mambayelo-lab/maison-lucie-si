@@ -1,5 +1,5 @@
 const state = { applications: [], configs: {}, active: null, tmsToken: null };
-const ADMIN_TOKEN_KEY = "lumen-admin-token";
+const ADMIN_TOKEN_KEY = "lucie-admin-token";
 const clean = value => String(value ?? "—");
 const money = value => new Intl.NumberFormat("en-US", { style: "currency", currency: "EUR", maximumFractionDigits: 0 }).format(value);
 
@@ -58,11 +58,11 @@ function renderTable(records) {
 }
 
 function renderEditor(records) {
-  return `<div class="editor-panel"><div class="editor-head"><strong>Modifier les valeurs fictives</strong><span>PATCH persistant · les prochaines lectures Aura les verront</span></div><textarea id="records-editor" spellcheck="false">${JSON.stringify(records, null, 2)}</textarea><div class="editor-actions"><input id="admin-token" type="password" placeholder="Token d’administration (démo)" value="${sessionStorage.getItem(ADMIN_TOKEN_KEY) || ""}"/><button class="button primary" id="save-records">Enregistrer</button><span id="save-status"></span></div></div>`;
+  return `<div class="editor-panel"><div class="editor-head"><strong>Modifier les valeurs fictives</strong><span>PATCH persistant · les prochaines lectures Aura les verront</span></div><textarea id="records-editor" spellcheck="false">${JSON.stringify(records, null, 2)}</textarea><div class="editor-actions"><input id="admin-token" type="password" placeholder="Token d’administration (démo)" value="${sessionStorage.getItem(ADMIN_TOKEN_KEY) || "lucie_aura_gateway_demo_token"}"/><button class="button primary" id="save-records">Enregistrer</button><span id="save-status"></span></div></div>`;
 }
 
 function adminHeaders() {
-  const token = sessionStorage.getItem(ADMIN_TOKEN_KEY) || document.querySelector("#admin-token")?.value.trim() || "lumen_aura_gateway_demo_token";
+  const token = sessionStorage.getItem(ADMIN_TOKEN_KEY) || document.querySelector("#admin-token")?.value.trim() || "lucie_aura_gateway_demo_token";
   sessionStorage.setItem(ADMIN_TOKEN_KEY, token);
   return { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
 }
@@ -120,10 +120,6 @@ async function selectApplication(id) {
     const config = activeConfig(id);
     if (config.enabled === false) throw new Error("Source désactivée dans la configuration");
     let payload;
-    if (["kafka-stream", "legacy-soap", "webhook-gateway"].includes(id)) {
-      document.querySelector("#app-detail").innerHTML = `<div class="app-heading"><div><p class="eyebrow">${clean(app.marketReference)}-INSPIRED</p><h3>${clean(app.name)}</h3><p>${clean(app.role)}</p></div><span class="status">● ${clean(app.status)}</span></div><div class="contract"><span>${clean(config.protocol || app.protocol)}</span><span>${clean(config.endpoint || app.baseUrl)}</span><span>Connecteur opérationnel dédié</span></div><p style="color:#7c8097;font-size:12px;margin-top:18px">${clean(app.disclaimer)}</p>`;
-      return;
-    }
     payload = await getJson(`/api/data/${id}`, { headers: await sourceHeaders(id) });
     const { application: readApp, entity, records, lineage } = payload;
     document.querySelector("#app-detail").innerHTML = `<div class="app-heading"><div><p class="eyebrow">${clean(readApp.marketReference)}-INSPIRED</p><h3>${clean(readApp.name)}</h3><p>${clean(readApp.role)}</p></div><span class="status">● ${clean(readApp.status)}</span></div><div class="contract"><span>${clean(config.protocol || readApp.protocol)}</span><span>${clean(entity)}</span><span>${records.length} sample records</span><span>request ${clean(lineage?.requestId).slice(0, 8)}</span></div>${renderTable(records)}${renderEditor(records)}<p style="color:#7c8097;font-size:12px;margin-top:18px">${clean(readApp.disclaimer)}</p>`;
@@ -138,10 +134,11 @@ function renderTabs(applications) {
 
 async function bootstrap() {
   try {
-    const [catalog, configPayload, alerts, ontology] = await Promise.all([
-      getJson("/api/catalog"), getJson("/api/config"), getJson("/api/alerts", { headers: { Authorization: "Bearer lumen_aura_gateway_demo_token" } }), getJson("/api/ontology"),
+    const [catalog, configPayload, alerts, ontology, health] = await Promise.all([
+      getJson("/api/catalog"), getJson("/api/config"), getJson("/api/alerts", { headers: { Authorization: "Bearer lucie_aura_gateway_demo_token" } }), getJson("/api/ontology"), getJson("/api/health"),
     ]);
     state.applications = configPayload.applications?.length ? configPayload.applications : catalog.applications;
+    document.querySelector("#persistence-state").textContent = health.persistence === "vercel-kv" ? "Persistent storage · active" : "Storage · temporary";
     state.configs = Object.fromEntries(state.applications.map(app => [app.id, app.config || {}]));
     renderTabs(state.applications);
     renderSignals(alerts.alerts, alerts.generatedAt);
