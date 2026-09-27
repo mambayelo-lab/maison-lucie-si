@@ -1,12 +1,12 @@
 import { createService, json, route } from "../shared/http.mjs";
 
 const sources = [
-  { id: "erp", name: "Lumen ERP", baseUrl: "http://127.0.0.1:4101", metadata: "/metadata" },
-  { id: "wms", name: "Lumen WMS", baseUrl: "http://127.0.0.1:4102", metadata: "/metadata" },
-  { id: "tms", name: "Lumen TMS", baseUrl: "http://127.0.0.1:4103", metadata: "/metadata" },
-  { id: "supplier-risk", name: "Lumen Supplier Risk", baseUrl: "http://127.0.0.1:4104", metadata: "/metadata" },
-  { id: "file-hub", name: "Lumen Batch Hub", baseUrl: "http://127.0.0.1:4105", metadata: "/metadata" },
-  { id: "event-broker", name: "Lumen Event Broker", baseUrl: "http://127.0.0.1:4100", metadata: "/topics" }
+  { id: "erp", name: "Lucie ERP", baseUrl: "http://127.0.0.1:4101", metadata: "/metadata" },
+  { id: "wms", name: "Lucie WMS", baseUrl: "http://127.0.0.1:4102", metadata: "/metadata" },
+  { id: "tms", name: "Lucie TMS", baseUrl: "http://127.0.0.1:4103", metadata: "/metadata" },
+  { id: "supplier-risk", name: "Lucie Supplier Risk", baseUrl: "http://127.0.0.1:4104", metadata: "/metadata" },
+  { id: "file-hub", name: "Lucie Batch Hub", baseUrl: "http://127.0.0.1:4105", metadata: "/metadata" },
+  { id: "event-broker", name: "Lucie Event Broker", baseUrl: "http://127.0.0.1:4100", metadata: "/topics" }
 ];
 
 const ontology = {
@@ -28,7 +28,7 @@ const ontology = {
 
 async function readJson(url) { const r = await fetch(url); if (!r.ok) throw new Error(`${url}: ${r.status}`); return r.json(); }
 
-createService({ name: "aura-lumen-gateway", port: 4191, routes: [
+createService({ name: "aura-lucie-gateway", port: 4191, routes: [
   route("GET", "/catalog", async ({ res }) => json(res, 200, { sources, auraContract: "1.0" })),
   route("GET", "/ontology/minimal", async ({ res }) => json(res, 200, ontology)),
   route("GET", "/metadata", async ({ res }) => {
