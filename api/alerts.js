@@ -18,6 +18,7 @@ export default async function handler(request, response) {
       const delay = Number(row?.delayHours ?? 72);
       return { ...alert, exposureEur: Math.round(920000 * Math.max(0, delay) / 72), severity: delay >= 72 ? "CRITICAL" : delay >= 24 ? "MAJOR" : "MINOR" };
     }
+    if (alert.id !== "ALT-003") return alert;
     const row = all["manhattan-wms"]?.records?.find(item => item.sku === "BOX-PREMIUM");
     const available = Number(row?.available ?? 290);
     const safety = Number(row?.safetyStock ?? 600);
@@ -27,6 +28,6 @@ export default async function handler(request, response) {
     generatedAt: generatedAt(),
     synthetic: true,
     alerts: alerts.map(alert => ({ ...alert, evidence: alert.evidence.map(sourceId => ({ sourceId, href: `/api/data/${sourceId}` })) })),
-    lineage: { ruleSet: "lumen-resilience-v1", requestId: gate.requestId },
+    lineage: { ruleSet: "lucie-resilience-v1", requestId: gate.requestId },
   });
 }

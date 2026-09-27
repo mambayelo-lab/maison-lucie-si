@@ -16,10 +16,10 @@ export default async function handler(request, response) {
   response.setHeader("Cache-Control", "no-store");
   response.setHeader("Pragma", "no-cache");
   response.status(200).json({
-    access_token: config?.auth?.accessToken || "lumen_tms_access_demo",
+    access_token: config?.auth?.accessToken || "lucie_tms_access_demo",
     token_type: "Bearer",
     expires_in: 3600,
-    scope: "lumen:tms:read",
+    scope: "lucie:tms:read",
     issued_at: new Date().toISOString(),
     request_id: gate.requestId,
   });
