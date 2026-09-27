@@ -1,5 +1,6 @@
 import { applications, generatedAt } from "../lib/demo-data.js";
-import { persistenceMode, readAllApplicationConfigs, readAudit, resetApplicationConfig, writeApplicationConfig } from "../lib/persistence.js";
+import { accessContracts } from "../lib/access.js";
+import { persistenceMode, readAllDatasets, readAllApplicationConfigs, readAudit, resetApplicationConfig, writeApplicationConfig } from "../lib/persistence.js";
 import { authenticateGateway, beginRequest, publicApplication, sendError, unauthorized } from "../lib/http-api.js";
 
 function sanitizedConfig(config) {
@@ -13,17 +14,27 @@ export default async function handler(request, response) {
   if (request.method === "GET") {
     const configs = await readAllApplicationConfigs();
     const audit = await readAudit();
+    const datasets = await readAllDatasets();
     return response.status(200).json({
       environment: "Maison Lucie Demo",
       synthetic: true,
       generatedAt: generatedAt(),
       persistence: persistenceMode,
-      applications: applications.map(app => ({ ...publicApplication(app), config: sanitizedConfig(configs[app.id]) })),
+      applications: applications.map(app => ({ ...publicApplication(app), config: sanitizedConfig(configs[app.id]), ...accessContracts(app, datasets[app.id]) })),
       audit: audit.slice(-50).reverse(),
       contracts: {
         alerts: "/api/alerts",
         events: "/api/events",
         files: ["/api/files/demand-forecast.csv", "/api/files/supplier-scorecard.csv"],
+        filesIndex: "/api/files/index.json",
+        graphql: "/api/graphql",
+        graphqlSdl: "/api/graphql?sdl",
+        soap: "/api/soap",
+        wsdl: "/api/soap?wsdl",
+        kafka: "/api/kafka",
+        kafkaTopics: "/api/kafka?topics",
+        batch: "/api/batch",
+        webhooks: "/api/webhooks",
         token: "/api/token",
         openapi: "/api/openapi",
         configuration: "/api/catalog",

@@ -122,9 +122,19 @@ async function selectApplication(id) {
     let payload;
     payload = await getJson(`/api/data/${id}`, { headers: await sourceHeaders(id) });
     const { application: readApp, entity, records, lineage } = payload;
-    document.querySelector("#app-detail").innerHTML = `<div class="app-heading"><div><p class="eyebrow">${clean(readApp.marketReference)}-INSPIRED</p><h3>${clean(readApp.name)}</h3><p>${clean(readApp.role)}</p></div><span class="status">● ${clean(readApp.status)}</span></div><div class="contract"><span>${clean(config.protocol || readApp.protocol)}</span><span>${clean(entity)}</span><span>${records.length} sample records</span><span>request ${clean(lineage?.requestId).slice(0, 8)}</span></div>${renderTable(records)}${renderEditor(records)}<p style="color:#7c8097;font-size:12px;margin-top:18px">${clean(readApp.disclaimer)}</p>`;
+    document.querySelector("#app-detail").innerHTML = `<div class="app-heading"><div><p class="eyebrow">${clean(readApp.marketReference)}-INSPIRED</p><h3>${clean(readApp.name)}</h3><p>${clean(readApp.role)}</p></div><span class="status">● ${clean(readApp.status)}</span></div><div class="contract"><span>${clean(config.protocol || readApp.protocol)}</span><span>${clean(entity)}</span><span>${records.length} sample records</span><span>request ${clean(lineage?.requestId).slice(0, 8)}</span></div>${renderProtocols(app)}${renderTable(records)}${renderEditor(records)}<p style="color:#7c8097;font-size:12px;margin-top:18px">${clean(readApp.disclaimer)}</p>`;
     document.querySelector("#save-records").addEventListener("click", saveRecords);
   } catch (error) { document.querySelector("#app-detail").innerHTML = `<h3>Authenticated source read failed</h3><p>${clean(error.message)}</p>`; }
+}
+
+function renderProtocols(app) {
+  const protocols = app?.protocols || {};
+  const labels = { rest: "REST", soap: "SOAP 1.1", graphql: "GraphQL", events: "Events (Kafka · CloudEvents)", file: "CSV file", batch: "Batch export" };
+  const links = Object.entries(labels).filter(([key]) => protocols[key]).map(([key, label]) => {
+    const href = key === "soap" ? protocols.soap.wsdl : key === "graphql" ? protocols.graphql.sdl : key === "batch" ? "/api/batch" : protocols[key].url;
+    return `<span title="${clean(protocols[key].method)} ${clean(protocols[key].url)}">${clean(label)} · <code>${clean(protocols[key].method)} ${clean(protocols[key].url)}</code>${key === "soap" || key === "graphql" ? ` · <a href="${clean(href)}" target="_blank">${key === "soap" ? "WSDL" : "SDL"} ↗</a>` : ""}</span>`;
+  }).join("");
+  return links ? `<div class="contract" aria-label="Access protocols">${links}</div><p style="color:#7c8097;font-size:12px">Tables: ${clean((app.tables || []).join(", "))} · same credentials as REST on every protocol · synthetic data.</p>` : "";
 }
 
 function renderTabs(applications) {

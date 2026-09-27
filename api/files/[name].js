@@ -1,26 +1,56 @@
 import { createHash } from "node:crypto";
-import { authenticateFiles, beginRequest, requestHeader, sendError, unauthorized } from "../../lib/http-api.js";
+import { authenticateFiles, authorizeApplication, beginRequest, requestHeader, sendError, unauthorized } from "../../lib/http-api.js";
+import { readAllDatasets, readDataset } from "../../lib/persistence.js";
+import { APP_IDS, resolveTable, tableNames, tableRecords, toCsv } from "../../lib/access.js";
+import { legacyCsvFiles } from "../../lib/enrichment.js";
+import { datasets as seedDatasets } from "../../lib/demo-data.js";
 
-const FILES = Object.freeze({
-  "demand-forecast.csv": "sku,site_id,week,forecast_qty,confidence_pct\nSCARF-AZUR,WH-PAR,2026-W40,665,82\nBOX-PREMIUM,WH-PAR,2026-W40,1120,74\nBAG-ORION,WH-LIL,2026-W40,252,88\n",
-  "supplier-scorecard.csv": "supplier_id,period,otif_pct,defect_rate_pct,lead_time_days,confirmed_capacity_pct\nSUP-001,2026-09,91.2,1.4,18,84\nSUP-002,2026-09,97.8,0.6,9,96\nSUP-003,2026-09,72.4,4.8,43,61\n",
-});
+// Exports fichiers CSV :
+// - historiques : demand-forecast.csv, supplier-scorecard.csv (X-API-Key "files", colonnes inchangées) ;
+// - par application : <appId>.csv (table principale) et <appId>.<Table>.csv
+//   (X-API-Key "files" OU identifiants REST de l'application OU jeton passerelle) ;
+// - index.json : liste des fichiers disponibles.
+const LEGACY = legacyCsvFiles(seedDatasets);
 
-export default function handler(request, response) {
-  const gate = beginRequest(request, response, ["GET", "HEAD"]);
-  if (!gate.ok) return;
-  if (!authenticateFiles(request)) return unauthorized(response, gate.requestId, "ApiKey");
-
-  const name = String(request.query?.name || "");
-  const content = FILES[name];
-  if (!content) return sendError(response, 404, "UNKNOWN_FILE", "Unknown Maison Lumen file export.", gate.requestId, { name });
-
-  const etag = `\"${createHash("sha256").update(content).digest("hex")}\"`;
+function sendCsv(request, response, name, content) {
+  const etag = `"${createHash("sha256").update(content).digest("hex")}"`;
   response.setHeader("Content-Type", "text/csv; charset=utf-8");
-  response.setHeader("Content-Disposition", `inline; filename=\"${name}\"`);
+  response.setHeader("Content-Disposition", `inline; filename="${name}"`);
   response.setHeader("ETag", etag);
   response.setHeader("X-Record-Count", String(content.trim().split("\n").length - 1));
+  response.setHeader("X-Synthetic-Data", "true");
   if (requestHeader(request, "if-none-match") === etag) return response.status(304).end();
   if (String(request.method).toUpperCase() === "HEAD") return response.status(200).end();
   return response.status(200).send(content);
+}
+
+export default async function handler(request, response) {
+  const gate = beginRequest(request, response, ["GET", "HEAD"]);
+  if (!gate.ok) return;
+  const name = String(request.query?.name || "");
+  const filesKey = authenticateFiles(request);
+
+  if (name === "index.json" || name === "index") {
+    if (!filesKey) return unauthorized(response, gate.requestId, "ApiKey");
+    const all = await readAllDatasets();
+    const files = [
+      ...Object.keys(LEGACY).map(file => ({ name: file, url: `/api/files/${file}`, kind: "legacy" })),
+      ...APP_IDS.flatMap(appId => tableNames(all[appId]).map((table, index) => ({ name: index === 0 ? `${appId}.csv` : `${appId}.${table}.csv`, url: `/api/files/${index === 0 ? `${appId}.csv` : `${appId}.${table}.csv`}`, appId, table }))),
+    ];
+    return response.status(200).json({ files, synthetic: true, requestId: gate.requestId });
+  }
+
+  if (LEGACY[name]) {
+    if (!filesKey) return unauthorized(response, gate.requestId, "ApiKey");
+    return sendCsv(request, response, name, LEGACY[name]);
+  }
+
+  const match = /^([a-z0-9-]+?)(?:\.([A-Za-z][A-Za-z0-9]*))?\.csv$/.exec(name);
+  if (!match || !APP_IDS.includes(match[1])) return sendError(response, 404, "UNKNOWN_FILE", "Unknown Maison Lucie file export. GET /api/files/index.json lists them.", gate.requestId, { name });
+  const [, appId, tableParam] = match;
+  if (!filesKey && !(await authorizeApplication(request, appId))) return unauthorized(response, gate.requestId, "ApiKey");
+  const dataset = await readDataset(appId);
+  const table = resolveTable(dataset, tableParam);
+  if (!table) return sendError(response, 404, "UNKNOWN_TABLE", "Unknown table for this application.", gate.requestId, { appId, table: tableParam, availableTables: tableNames(dataset) });
+  return sendCsv(request, response, name, toCsv(tableRecords(dataset, table)));
 }
