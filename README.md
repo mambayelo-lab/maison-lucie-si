@@ -7,6 +7,10 @@ Executable, synthetic information system for the **Aura Supply Chain Resilience 
 
 The project exposes ten coherent source applications, each reachable over **REST, SOAP 1.1, GraphQL, Kafka-like events (CloudEvents 1.0), CSV files and batch exports**, plus deterministic alerts and a cursor-based CloudEvents feed. All data is **synthetic** (15 fictitious suppliers, 20 SKUs, 12 sites, purchase orders, shipments with ports/routes/delays, forecasts with promotions, disruptions). Vendor names only identify familiar integration patterns; no vendor product or real customer data is embedded.
 
+## Multi-source test IS (5 sources)
+
+SAP S/4HANA (OData v2 with `$metadata`), PIM (REST), Manhattan Active WM (REST), OMS (REST or CSV) and a data lake (CSV and aggregates), each with its own keys and documented deliberate errors. Catalogue: `GET /api/sources/index`. Add `size=scale` to any resource for millions of rows generated on the fly (pagination only, nothing stored); `npm run generate:scale` writes the same rows as Parquet to `/tmp`. Details: [docs/SOURCES-MULTI.md](docs/SOURCES-MULTI.md).
+
 ## Public discovery endpoints
 
 | Endpoint | Purpose |

@@ -1,19 +1,51 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "rewrites": [
-    { "source": "/", "destination": "/public/index.html" },
-    { "source": "/app.js", "destination": "/public/app.js" },
-    { "source": "/styles.css", "destination": "/public/styles.css" },
-    { "source": "/api/config", "destination": "/api/catalog" }
+    {
+      "source": "/",
+      "destination": "/public/index.html"
+    },
+    {
+      "source": "/app.js",
+      "destination": "/public/app.js"
+    },
+    {
+      "source": "/styles.css",
+      "destination": "/public/styles.css"
+    },
+    {
+      "source": "/api/config",
+      "destination": "/api/catalog"
+    },
+    {
+      "source": "/sap/opu/odata/sap/API_BUSINESS_PARTNER/:entity",
+      "destination": "/api/sources/sap?entity=:entity"
+    },
+    {
+      "source": "/sap/opu/odata/sap/API_PURCHASEORDER_PROCESS_SRV/:entity",
+      "destination": "/api/sources/sap?entity=:entity"
+    }
   ],
   "headers": [
     {
       "source": "/(.*)",
       "headers": [
-        { "key": "X-Content-Type-Options", "value": "nosniff" },
-        { "key": "Referrer-Policy", "value": "no-referrer" },
-        { "key": "X-Frame-Options", "value": "DENY" },
-        { "key": "Permissions-Policy", "value": "camera=(), microphone=(), geolocation=()" }
+        {
+          "key": "X-Content-Type-Options",
+          "value": "nosniff"
+        },
+        {
+          "key": "Referrer-Policy",
+          "value": "no-referrer"
+        },
+        {
+          "key": "X-Frame-Options",
+          "value": "DENY"
+        },
+        {
+          "key": "Permissions-Policy",
+          "value": "camera=(), microphone=(), geolocation=()"
+        }
       ]
     }
   ]
