@@ -6,12 +6,12 @@
   "description": "Executable multi-application information system used to demonstrate Aura Supply Chain Resilience.",
   "scripts": {
     "start": "node scripts/start.mjs",
-    "test": "node scripts/smoke-test.mjs && node scripts/test-vercel-api.mjs && node scripts/test-multisource.mjs && node scripts/test-generator-equivalence.mjs",
+    "test": "node scripts/smoke-test.mjs && node scripts/test-vercel-api.mjs && npm run test:multisource",
     "test:api": "node scripts/test-vercel-api.mjs",
     "demo": "node scripts/demo-scenario.mjs",
     "generate:demo": "node scripts/generate-multisource.mjs demo",
     "generate:scale": "node scripts/generate-multisource.mjs scale",
-    "test:multisource": "node scripts/test-multisource.mjs && node scripts/test-generator-equivalence.mjs"
+    "test:multisource": "node scripts/test-multisource.mjs && node scripts/test-generator-equivalence.mjs && node scripts/test-coherence.mjs"
   },
   "engines": {
     "node": ">=22"

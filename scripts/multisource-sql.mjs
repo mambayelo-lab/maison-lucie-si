@@ -140,12 +140,12 @@ export function generationSql(size) {
     // ── Data lake : ventes (EAN-13, code magasin en minuscules/underscore) ──
     `CREATE OR REPLACE TABLE lake_sales AS
      SELECT (DATE '${AS_OF}' - INTERVAL (n % 365) DAY)::DATE AS SaleDate,
-            ean13('376' || lpad((CASE WHEN n % 3 = 0 THEN 1 + (n % ${STORY_SKUS.length}) ELSE 1 + h32(n::BIGINT * 7) % ${z.products} END)::VARCHAR, 9, '0')) AS Ean,
+            ean13('376' || lpad((CASE WHEN idx > ${STORY_SKUS.length} AND idx % ${z.dupEanEvery} = 0 THEN idx - 1 ELSE idx END)::VARCHAR, 9, '0')) AS Ean,
             lower(replace(site_code(6 + (n % greatest(1, ${z.sites} - 6))), '-', '_')) AS StoreCode,
             1 + (u(n, 61) * 2)::INTEGER AS Quantity,
             round(20 + u(n, 62) * 480, 2) AS NetAmount,
             'T' || lpad((n // 2)::VARCHAR, 10, '0') AS TicketId
-     FROM range(1, ${z.salesLines + 1}) t(n)`,
+     FROM (SELECT n, CASE WHEN n % 3 = 0 THEN 1 + (n % ${STORY_SKUS.length}) ELSE 1 + h32(n::BIGINT * 7) % ${z.products} END AS idx FROM range(1, ${z.salesLines + 1}) t(n))`,
     `DROP TABLE sap_supplier_base`,
   ];
 }
