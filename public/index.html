@@ -51,6 +51,12 @@
       </div>
     </section>
 
+    <section class="section" id="multi-sources">
+      <div class="section-title"><div><p class="eyebrow">MULTI-SOURCE TEST IS</p><h2>Five sources, their own keys, deliberate errors.</h2></div><a href="/api/sources/index" target="_blank">Catalogue ↗</a></div>
+      <div id="sources-grid" class="ms-grid"></div>
+      <p class="ms-note">Demo size served online with full filters. Add <code>size=scale</code> to any resource for millions of rows generated on the fly (pagination only, nothing stored). The same rows exist as Parquet via <code>npm run generate:scale</code>.</p>
+    </section>
+
     <section class="section ontology-section">
       <div class="section-title"><div><p class="eyebrow">MINIMAL ONTOLOGY</p><h2>One business language across fragmented systems.</h2></div><a href="/api/ontology" target="_blank">JSON contract ↗</a></div>
       <div id="ontology" class="ontology"></div>
@@ -70,5 +76,13 @@
 
   <footer><span>Maison Lucie · Synthetic demonstration environment</span><span>Built for Aura Supply Chain Resilience</span></footer>
   <script type="module" src="/app.js"></script>
+<style>.ms-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:12px}.ms-card{border:1px solid rgba(120,110,200,.25);border-radius:12px;padding:14px;background:rgba(255,255,255,.04)}.ms-card h3{margin:0 0 4px;font-size:15px}.ms-card p{margin:2px 0;font-size:13px;opacity:.85}.ms-card code{font-size:12px}.ms-vol{display:flex;justify-content:space-between;font-size:12.5px;margin-top:6px}.ms-note{font-size:13px;opacity:.8;margin-top:10px}</style>
+<script type="module">
+fetch("/api/sources/index").then(r => r.json()).then(c => {
+  const vol = { sap: ["sap_suppliers", "sap_purchase_orders"], pim: ["pim_products"], manhattan: ["wms_stock", "wms_shipments"], oms: ["oms_order_lines"], lake: ["lake_sales"] };
+  const fmt = n => Number(n).toLocaleString("en-US");
+  document.getElementById("sources-grid").innerHTML = Object.entries(c.sources).map(([id, s]) => `<article class="ms-card"><h3>${s.label}</h3><p>${s.role}</p><p>Keys: ${Object.values(s.keys).join(" · ")}</p>${(vol[id] || []).map(t => `<div class="ms-vol"><code>${t}</code><span>${fmt(c.counts[t])} demo · ${fmt(c.scale.counts[t])} scale</span></div>`).join("")}<p><code>${s.endpoints[0]}</code></p></article>`).join("") + `<article class="ms-card"><h3>Deliberate errors</h3>${c.deliberateErrors.slice(0, 6).map(e => `<p>• ${e.id} (${e.source})${e.count ? ` × ${e.count}` : ""}</p>`).join("")}<p>…and ${c.deliberateErrors.length - 6} more</p></article>`;
+}).catch(() => {});
+</script>
 </body>
 </html>
