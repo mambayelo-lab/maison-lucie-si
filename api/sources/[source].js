@@ -15,7 +15,7 @@ export default async function handler(request, response) {
   // Liens directs depuis la page d'accueil : jeton passerelle accepté aussi en paramètre (?token=).
   if (q.token) { request.headers = { ...(request.headers || {}), authorization: `Bearer ${q.token}` }; delete q.token; }
   if (!authenticateGateway(request)) return unauthorized(response, gate.requestId);
-  if (q.size === "scale") {
+  if (q.size === "scale" || q.volume === "scale") {
     const name = source === "sap" ? String(q.entity || "") : String(q.resource || Object.keys(SOURCES[source].resources)[0]);
     const base = source === "sap" ? (name === "A_Supplier" ? "/sap/opu/odata/sap/API_BUSINESS_PARTNER/A_Supplier" : `/sap/opu/odata/sap/API_PURCHASEORDER_PROCESS_SRV/${name}`) : "";
     const r = scalePage(source, name, q, base);

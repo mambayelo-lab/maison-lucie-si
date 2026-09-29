@@ -101,3 +101,12 @@ console.log(`  ok handler HTTP\n${n + 1} tests multi-sources OK`);
   assert.match(x, /<EntitySet Name="A_Supplier"/); assert.match(x, /Property Name="LastChangeDateTime" Type="Edm.DateTime"/);
   console.log("  ok $metadata OData");
 }
+{
+  // Chaque ressource de chaque application existe aussi en taille scale.
+  const { scalePage, SOURCES } = await import("../lib/multisource-api.js");
+  for (const [src, def] of Object.entries(SOURCES)) for (const name of Object.keys(def.entities ?? def.resources)) {
+    const r = scalePage(src, name, src === "sap" ? { $top: "2" } : { limit: "2", size: "2" });
+    assert.equal(r.status, 200, `${src}/${name}`);
+  }
+  console.log("  ok toutes les ressources en taille scale");
+}
