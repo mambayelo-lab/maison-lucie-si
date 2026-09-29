@@ -1,18 +1,22 @@
 # Maison Lucie : SI de test multi-sources
 
-Maison Lucie simule le SI d'un distributeur avec 5 sources indépendantes, chacune avec ses propres clés et ses propres erreurs. Il sert à tester la couche d'intégration d'Aura : connexion, métadonnées, mapping, rapprochement, cohérence et alertes.
+Maison Lucie simule le SI d'un distributeur avec 9 applications indépendantes, chacune avec ses propres clés et ses propres erreurs. Il sert à tester la couche d'intégration d'Aura : connexion, métadonnées, mapping, rapprochement, cohérence et alertes.
 
-## Les 5 sources
+## Le paysage applicatif (9 applications)
 
 Toutes les ressources demandent l'en-tête `Authorization: Bearer <jeton passerelle>`. Le jeton public de démonstration est `lucie_aura_gateway_demo_token`, surchargeable par `LUCIE_GATEWAY_TOKEN`. Le catalogue est servi par `GET /api/sources/index`, sans authentification.
 
-| Source | Rôle | Accès | Clés propres |
+| Application | Rôle | Accès | Clés propres |
 |---|---|---|---|
-| SAP S/4HANA | maître fournisseurs, commandes d'achat | OData v2 : `/sap/opu/odata/sap/API_BUSINESS_PARTNER/A_Supplier`, `/sap/opu/odata/sap/API_PURCHASEORDER_PROCESS_SRV/A_PurchaseOrderItem` | LIFNR (`0000100001`) |
-| PIM | maître produits | REST : `/api/sources/pim?resource=products` | productId, EAN-13, identifiant fiscal fournisseur en saisie libre |
-| Manhattan Active WM | stock, expéditions, sites | REST : `/api/sources/manhattan?resource=inventory` (ou `shipments`, `facilities`) | ItemId en GTIN-14, FacilityId sans tiret (`WHPAR`) |
+| ERP · SAP S/4HANA | achats, fournisseurs, finance (maître fournisseurs) | OData v2 : `/sap/opu/odata/sap/API_BUSINESS_PARTNER/A_Supplier`, `…/API_PURCHASEORDER_PROCESS_SRV/A_PurchaseOrderItem` | LIFNR (`0000100001`), EBELN |
+| PIM | référentiel produit (maître produits) | REST : `/api/sources/pim?resource=products` | productId, EAN-13, identifiant fiscal fournisseur en saisie libre |
+| WMS · Manhattan Active WM | stocks, entrepôts | REST : `/api/sources/manhattan?resource=inventory` (ou `facilities`) | ItemId en GTIN-14, FacilityId sans tiret (`WHPAR`) |
+| TMS | transport, expéditions, transporteurs | REST : `/api/sources/tms?resource=shipments` | ShipmentId, `PO-…`, raison sociale libre, transporteur, mode |
+| APS | planification, prévisions, S&OP | REST : `/api/sources/aps?resource=forecasts` | référence interne + site + semaine ISO |
+| SRM · portail fournisseurs | évaluation, risques, certifications | REST : `/api/sources/srm?resource=suppliers` | SrmId, TVA « FR-12-… » ou DUNS |
+| QMS | qualité, non-conformités, retours | REST : `/api/sources/qms?resource=nonconformities` | NcId, EAN, identifiant fiscal fournisseur |
 | OMS | commandes clients | REST : `/api/sources/oms?resource=order-lines` ; fichier : `&format=csv` | référence interne (casse libre), OrderLineId |
-| Data lake | historique des ventes | CSV : `/api/sources/lake?resource=sales&format=csv` ; agrégats : `?aggregate=1&groupBy=Ean,month&from=…&to=…` | EAN-13, code magasin (`btq_par_fsh`) |
+| Data lake | historique des ventes | CSV : `/api/sources/lake?resource=sales&format=csv` ; agrégats : `?aggregate=1&groupBy=Ean,month` | EAN-13, code magasin (`btq_par_fsh`) |
 
 Chaque interface a ses paramètres :
 
@@ -36,7 +40,7 @@ Chaque interface a ses paramètres :
 - aux **API à grande échelle**, en ajoutant `size=scale` à toute ressource. Les millions de lignes sont générés à la volée, page par page (5 000 lignes au plus). Rien n'est stocké ni sur git ni sur Vercel. Seule la pagination est offerte ; `$filter`, `updatedAfter` et `aggregate` renvoient 400 ;
 - au **Parquet** (`npm run generate:scale`), qui écrit dans `/tmp/maison-lucie-scale` (230 s, 520 Mo). Le lac y est partitionné par mois.
 
-La génération Parquet utilise la même logique écrite en SQL DuckDB (`scripts/multisource-sql.mjs`, hachage `h32` identique). `scripts/test-generator-equivalence.mjs` vérifie que JavaScript et SQL donnent exactement les mêmes lignes, table par table.
+La génération Parquet utilise, pour les six premières applications, la même logique écrite en SQL DuckDB ; APS, SRM et QMS sont écrits depuis le générateur JavaScript (`scripts/multisource-sql.mjs`, hachage `h32` identique). `scripts/test-generator-equivalence.mjs` vérifie que JavaScript et SQL donnent exactement les mêmes lignes, table par table.
 
 | Table | Démo | Scale |
 |---|---|---|
@@ -45,7 +49,10 @@ La génération Parquet utilise la même logique écrite en SQL DuckDB (`scripts
 | pim_products | 1 200 | 1 000 000 |
 | wms_facilities | 12 | 500 |
 | wms_stock | 3 600 | 5 000 000 |
-| wms_shipments | 800 | 1 000 000 |
+| tms_shipments | 800 | 1 000 000 |
+| aps_forecasts | 3 600 | 1 200 000 |
+| srm_suppliers | 60 | 5 000 |
+| qms_nonconformities | 400 | 200 000 |
 | oms_order_lines | 3 000 | 10 000 000 |
 | lake_sales | 4 000 | 50 000 000 |
 
@@ -62,11 +69,15 @@ Les erreurs sont injectées par des règles déterministes. La vérité terrain 
 | GTIN inconnu (préfixe `0399`) | Manhattan | 5 | 5 000 | orphelin |
 | Site `WHXXX` inconnu | Manhattan | 2 | 1 000 | orphelin |
 | GTIN-14 et FacilityId sans tiret | Manhattan | — | — | normaliser (EAN-13, `WH-PAR`) |
-| Raison sociale variante (`TESSITURA MILANO Ltd`) | Manhattan | 8 | 4 368 | ressemblance en file de validation, jamais appliquée seule |
+| Raison sociale variante (`TESSITURA MILANO Ltd`) | TMS | 8 | 4 368 | ressemblance en file de validation, jamais appliquée seule |
 | Référence en minuscules | OMS | 60 | 200 000 | normaliser |
 | Code magasin `btq_par_fsh` | lac | — | — | normaliser |
 | Pays fournisseur différent de SAP | PIM | 3 | 218 | écart de fond, signalé dans la preuve des alertes |
-| Commande `PO-4500000001` (WMS) contre `4500000001` (SAP) | Manhattan | — | — | normaliser |
+| Prévision sur une référence inconnue (`ML-9…`) | APS | 7 | 1 200 | orphelin |
+| Certification expirée | SRM | 5 | 454 | à signaler dans le risque fournisseur |
+| TVA « FR-12-… », nom « (groupe) » | SRM | — | — | normaliser, rapprocher |
+| Non-conformité sur un EAN inconnu | QMS | 4 | 2 061 | orphelin |
+| Commande `PO-4500000001` (TMS) contre `4500000001` (SAP) | TMS | — | — | normaliser |
 
 ## Récit de démonstration
 

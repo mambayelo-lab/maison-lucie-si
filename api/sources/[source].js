@@ -12,6 +12,8 @@ export default async function handler(request, response) {
   response.setHeader("X-Synthetic-Data", "true");
   if (source === "index") return response.status(200).json(catalog());
   if (!SOURCES[source]) return sendError(response, 404, "UNKNOWN_SOURCE", `Source inconnue : ${source}`, gate.requestId);
+  // Liens directs depuis la page d'accueil : jeton passerelle accepté aussi en paramètre (?token=).
+  if (q.token) { request.headers = { ...(request.headers || {}), authorization: `Bearer ${q.token}` }; delete q.token; }
   if (!authenticateGateway(request)) return unauthorized(response, gate.requestId);
   if (q.size === "scale") {
     const name = source === "sap" ? String(q.entity || "") : String(q.resource || Object.keys(SOURCES[source].resources)[0]);

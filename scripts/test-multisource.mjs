@@ -33,8 +33,13 @@ ok("REST PIM curseur + updatedAfter", () => {
 ok("Manhattan page/size + fenêtre temporelle", () => {
   const r = restPage("manhattan", "inventory", { page: "1", size: "1000" });
   assert.equal(r.body.header.page, 1); assert.equal(r.body.data.length, 1000); assert.equal(r.body.header.totalCount, 3600);
-  const w = restPage("manhattan", "shipments", { from: "2026-09-20", to: "2026-09-25" });
-  assert.ok(w.body.header.totalCount > 0 && w.body.header.totalCount < 800);
+  const w = restPage("tms", "shipments", { from: "2026-09-20", to: "2026-09-25" });
+  assert.ok(w.body.total > 0 && w.body.total < 800);
+  // Paysage : 9 applications, chacune avec son rôle et ses clés.
+  assert.deepEqual(Object.keys(catalog().sources), ["sap", "pim", "manhattan", "tms", "aps", "srm", "qms", "oms", "lake"]);
+  assert.ok(restPage("aps", "forecasts", { limit: "5" }).body.items[0].Week);
+  assert.ok(restPage("srm", "suppliers", { limit: "5" }).body.items[0].SrmId);
+  assert.ok(restPage("qms", "nonconformities", { limit: "5" }).body.items[0].NcId);
 });
 ok("Lake : agrégat poussé à la source", () => {
   const r = lakeAggregate({ groupBy: "month" });
@@ -48,7 +53,7 @@ ok("Erreurs volontaires présentes et documentées", () => {
   assert.ok(t.wms_stock.some(s => s.FacilityId === "WHXXX"));
   assert.ok(t.pim_products.every(p => /^\d{13}$/.test(p.ean)));
   assert.ok(t.wms_stock.every(s => /^\d{14}$/.test(s.ItemId)));
-  assert.equal(DELIBERATE_ERRORS.length, 12);
+  assert.equal(DELIBERATE_ERRORS.length, 16);
   assert.ok(catalog().sources.sap.endpoints[0].includes("A_Supplier"));
 });
 ok("Récit démo : SUP-001 et CLASP-AURORA", () => {
@@ -58,7 +63,7 @@ ok("Récit démo : SUP-001 et CLASP-AURORA", () => {
   const clasp = t.pim_products.find(p => p.internalRef === "CLASP-AURORA");
   const out = t.wms_stock.filter(s => s.ItemId === "0" + clasp.ean && s.OnHand - s.Allocated < s.SafetyStock);
   assert.ok(out.length >= 1);
-  const late = t.wms_shipments.filter(s => s.OriginName === "Tessitura Milano" && (s.ActualDate ?? "2026-09-28") > s.ExpectedDate);
+  const late = t.tms_shipments.filter(s => s.OriginName === "Tessitura Milano" && (s.ActualDate ?? "2026-09-28") > s.ExpectedDate);
   assert.ok(late.length >= 1);
 });
 

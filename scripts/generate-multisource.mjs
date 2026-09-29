@@ -8,7 +8,7 @@ const size = process.argv[2] || "demo";
 if (size === "demo") {
   // Taille démo : générateur JavaScript (le même que les API à la volée), sans DuckDB.
   const z = SIZES.demo, tables = {}, counts = {};
-  for (const t of TABLES) { tables[t] = Array.from({ length: GEN[t].count(z) }, (_, i) => GEN[t].row(z, i)); counts[t] = tables[t].length; }
+  for (const t of Object.keys(GEN)) { tables[t] = Array.from({ length: GEN[t].count(z) }, (_, i) => GEN[t].row(z, i)); counts[t] = tables[t].length; }
   const T = tables, sup = new Map(T.sap_suppliers.map(s => [s.SupplierName, s]));
   const eanCount = new Map(); for (const p of T.pim_products) eanCount.set(p.ean, (eanCount.get(p.ean) ?? 0) + 1);
   const groundTruth = {
@@ -19,9 +19,12 @@ if (size === "demo") {
     unknownFacilities: T.wms_stock.filter(s => s.FacilityId === "WHXXX").length,
     lowercaseOmsRefs: T.oms_order_lines.filter(o => o.ProductRef !== o.ProductRef.toUpperCase()).length,
     stockouts: T.wms_stock.filter(s => s.OnHand - s.Allocated < s.SafetyStock).length,
-    variantOriginNames: new Set(T.wms_shipments.filter(s => / Ltd$/.test(s.OriginName)).map(s => s.OriginName)).size,
+    variantOriginNames: new Set(T.tms_shipments.filter(s => / Ltd$/.test(s.OriginName)).map(s => s.OriginName)).size,
     countryDivergentSuppliers: new Set(T.pim_products.filter(p => !p.supplierTaxId.startsWith("FR99") && sup.get(p.supplierName) && sup.get(p.supplierName).Country !== p.supplierCountry).map(p => p.supplierName)).size,
-    lateShipments: T.wms_shipments.filter(s => (s.ActualDate ?? "") > s.ExpectedDate || (!s.ActualDate && s.ExpectedDate < AS_OF)).length,
+    unknownApsMaterials: T.aps_forecasts.filter(f => /^ML-9/.test(f.Material)).length,
+    expiredCertifications: T.srm_suppliers.filter(x => x.CertificationExpiry < AS_OF).length,
+    unknownQmsEans: T.qms_nonconformities.filter(x => x.Ean.startsWith("399")).length,
+    lateShipments: T.tms_shipments.filter(s => (s.ActualDate ?? "") > s.ExpectedDate || (!s.ActualDate && s.ExpectedDate < AS_OF)).length,
   };
   mkdirSync("data", { recursive: true });
   writeFileSync("data/multisource-demo.json", JSON.stringify({ asOf: AS_OF, size, counts, groundTruth, tables }));
@@ -56,6 +59,16 @@ for (const [k, sql] of Object.entries(GROUND_TRUTH_SQL)) truth[k] = Number((awai
     const select = t === "lake_sales" ? `SELECT *, strftime(SaleDate, '%Y-%m') AS month FROM ${t}` : `SELECT * FROM ${t}`;
     await con.run(`COPY (${select}) TO '${out}/${t}${partition ? "" : ".parquet"}' (FORMAT parquet, COMPRESSION zstd${partition})`);
     console.log(`  écrit ${t.padEnd(22)} ${counts[t].toLocaleString("fr-FR").padStart(12)} lignes  ${((Date.now() - t1) / 1000).toFixed(1)} s`);
+  }
+  // Applications générées en JavaScript seulement (APS, SRM, QMS) : NDJSON puis Parquet.
+  const { appendFileSync } = await import("node:fs");
+  for (const [t, def] of Object.entries(GEN).filter(([, d]) => d.jsOnly)) {
+    const t1 = Date.now(), z = SIZES.scale, n = def.count(z), tmp = `${out}/${t}.ndjson`;
+    writeFileSync(tmp, "");
+    for (let i = 0; i < n; i += 100_000) appendFileSync(tmp, Array.from({ length: Math.min(100_000, n - i) }, (_, k) => JSON.stringify(def.row(z, i + k))).join("\n") + "\n");
+    await con.run(`COPY (SELECT * FROM read_json_auto('${tmp}')) TO '${out}/${t}.parquet' (FORMAT parquet, COMPRESSION zstd)`);
+    rmSync(tmp); counts[t] = n;
+    console.log(`  écrit ${t.padEnd(22)} ${n.toLocaleString("fr-FR").padStart(12)} lignes  ${((Date.now() - t1) / 1000).toFixed(1)} s`);
   }
   writeFileSync(`${out}/manifest.json`, JSON.stringify({ asOf: AS_OF, size, counts, groundTruth: truth, seconds: (Date.now() - t0) / 1000 }, null, 1));
   console.log(JSON.stringify({ counts, groundTruth: truth, seconds: (Date.now() - t0) / 1000 }, null, 1));

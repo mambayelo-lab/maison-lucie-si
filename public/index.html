@@ -52,8 +52,13 @@
     </section>
 
     <section class="section" id="multi-sources">
-      <div class="section-title"><div><p class="eyebrow">MULTI-SOURCE TEST IS</p><h2>Five sources, their own keys, deliberate errors.</h2></div><a href="/api/sources/index" target="_blank">Catalogue ↗</a></div>
+      <div class="section-title"><div><p class="eyebrow">MULTI-SOURCE TEST IS</p><h2>Nine applications, their own keys, deliberate errors.</h2></div><a href="/api/sources/index" target="_blank">Catalogue ↗</a></div>
       <div id="sources-grid" class="ms-grid"></div>
+      <h3 class="ms-h3">Millions of rows, generated on the fly</h3>
+      <table class="ms-table" id="scale-table"><thead><tr><th>Source</th><th>Resource</th><th>Total rows (scale)</th><th>First page</th><th>Next page</th></tr></thead><tbody></tbody></table>
+      <pre class="ms-call">curl -H "Authorization: Bearer lucie_aura_gateway_demo_token" \
+  "https://maison-lucie-si.vercel.app/api/sources/lake?resource=sales&amp;size=scale&amp;limit=1000&amp;cursor=49999000"
+# → {"items":[…1000 rows…],"total":50000000,"nextCursor":null}   (OData: $top / $skip ; Manhattan: page / size)</pre>
       <p class="ms-note">Demo size served online with full filters. Add <code>size=scale</code> to any resource for millions of rows generated on the fly (pagination only, nothing stored). The same rows exist as Parquet via <code>npm run generate:scale</code>.</p>
     </section>
 
@@ -76,12 +81,16 @@
 
   <footer><span>Maison Lucie · Synthetic demonstration environment</span><span>Built for Aura Supply Chain Resilience</span></footer>
   <script type="module" src="/app.js"></script>
-<style>.ms-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:12px}.ms-card{border:1px solid rgba(120,110,200,.25);border-radius:12px;padding:14px;background:rgba(255,255,255,.04)}.ms-card h3{margin:0 0 4px;font-size:15px}.ms-card p{margin:2px 0;font-size:13px;opacity:.85}.ms-card code{font-size:12px}.ms-vol{display:flex;justify-content:space-between;font-size:12.5px;margin-top:6px}.ms-note{font-size:13px;opacity:.8;margin-top:10px}</style>
+<style>.ms-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:12px}.ms-card{border:1px solid rgba(120,110,200,.25);border-radius:12px;padding:14px;background:rgba(255,255,255,.04)}.ms-card h3{margin:0 0 4px;font-size:15px}.ms-card p{margin:2px 0;font-size:13px;opacity:.85}.ms-card code{font-size:12px}.ms-vol{display:flex;justify-content:space-between;font-size:12.5px;margin-top:6px}.ms-note{font-size:13px;opacity:.8;margin-top:10px}.ms-h3{margin:18px 0 8px;font-size:16px}.ms-table{width:100%;border-collapse:collapse;font-size:13px}.ms-table th,.ms-table td{text-align:left;padding:6px 8px;border-top:1px solid rgba(120,110,200,.2)}.ms-table a{color:inherit}.ms-call{font-size:12px;white-space:pre-wrap;background:rgba(0,0,0,.25);padding:10px;border-radius:8px}</style>
 <script type="module">
 fetch("/api/sources/index").then(r => r.json()).then(c => {
-  const vol = { sap: ["sap_suppliers", "sap_purchase_orders"], pim: ["pim_products"], manhattan: ["wms_stock", "wms_shipments"], oms: ["oms_order_lines"], lake: ["lake_sales"] };
+  const vol = { sap: ["sap_suppliers", "sap_purchase_orders"], pim: ["pim_products"], manhattan: ["wms_stock", "wms_facilities"], tms: ["tms_shipments"], aps: ["aps_forecasts"], srm: ["srm_suppliers"], qms: ["qms_nonconformities"], oms: ["oms_order_lines"], lake: ["lake_sales"] };
   const fmt = n => Number(n).toLocaleString("en-US");
   document.getElementById("sources-grid").innerHTML = Object.entries(c.sources).map(([id, s]) => `<article class="ms-card"><h3>${s.label}</h3><p>${s.role}</p><p>Keys: ${Object.values(s.keys).join(" · ")}</p>${(vol[id] || []).map(t => `<div class="ms-vol"><code>${t}</code><span>${fmt(c.counts[t])} demo · ${fmt(c.scale.counts[t])} scale</span></div>`).join("")}<p><code>${s.endpoints[0]}</code></p></article>`).join("") + `<article class="ms-card"><h3>Deliberate errors</h3>${c.deliberateErrors.slice(0, 6).map(e => `<p>• ${e.id} (${e.source})${e.count ? ` × ${e.count}` : ""}</p>`).join("")}<p>…and ${c.deliberateErrors.length - 6} more</p></article>`;
+  const T = "lucie_aura_gateway_demo_token";
+  const res = [["sap", "A_Supplier", "sap_suppliers"], ["sap", "A_PurchaseOrderItem", "sap_purchase_orders"], ["pim", "products", "pim_products"], ["manhattan", "inventory", "wms_stock"], ["tms", "shipments", "tms_shipments"], ["aps", "forecasts", "aps_forecasts"], ["srm", "suppliers", "srm_suppliers"], ["qms", "nonconformities", "qms_nonconformities"], ["oms", "order-lines", "oms_order_lines"], ["lake", "sales", "lake_sales"]];
+  const link = (src, r, page) => src === "sap" ? `/api/sources/sap?entity=${r}&size=scale&$top=100&$skip=${page * 100}&token=${T}` : src === "manhattan" ? `/api/sources/manhattan?resource=${r}&size=scale&size_=1&page=${page}&token=${T}`.replace("&size=scale&size_=1", "&size=scale") : `/api/sources/${src}?resource=${r}&size=scale&limit=100&cursor=${page * 100}&token=${T}`;
+  document.querySelector("#scale-table tbody").innerHTML = res.map(([src, r, t]) => `<tr><td>${c.sources[src].label}</td><td><code>${r}</code></td><td>${fmt(c.scale.counts[t])}</td><td><a href="${link(src, r, 0)}" target="_blank">page 1 ↗</a></td><td><a href="${link(src, r, 1)}" target="_blank">page 2 ↗</a></td></tr>`).join("");
 }).catch(() => {});
 </script>
 </body>

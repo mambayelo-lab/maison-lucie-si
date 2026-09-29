@@ -10,7 +10,7 @@ const con = await db.connect();
 for (const sql of generationSql("demo")) await con.run(sql);
 const z = SIZES.demo;
 const canon = r => JSON.stringify(Object.fromEntries(Object.entries(r).map(([k, v]) => [k, typeof v === "number" ? Math.round(v * 100) / 100 : v])));
-for (const t of SQL_TABLES) {
+for (const t of SQL_TABLES) { // APS, SRM et QMS : générés en JavaScript seulement
   const sqlRows = (await con.runAndReadAll(`SELECT * FROM ${t}`)).getRowObjectsJson().map(canon).sort();
   const def = TABLES[t];
   const jsRows = Array.from({ length: def.count(z) }, (_, i) => canon(def.row(z, i))).sort();

@@ -104,7 +104,7 @@ export function generationSql(size) {
     `UPDATE sap_purchase_orders SET Material = CASE WHEN CAST(PurchaseOrder AS BIGINT) - 4500000000 <= 40
         THEN ${list(STORY_SKUS.map(s => s[0]))}[1 + ((CAST(PurchaseOrder AS BIGINT) - 4500000000) % ${STORY_SKUS.length})]
         ELSE 'ML-' || lpad((${STORY_SKUS.length + 1} + h32(CAST(PurchaseOrder AS BIGINT) * 29) % ${z.products - STORY_SKUS.length})::VARCHAR, 7, '0') END`,
-    `CREATE OR REPLACE TABLE wms_shipments AS
+    `CREATE OR REPLACE TABLE tms_shipments AS
      SELECT 'SHP-' || lpad(n::VARCHAR, 8, '0') AS ShipmentId, 'PO-' || po.PurchaseOrder AS PurchaseOrderRef,
             '0' || pr.ean AS ItemId,
             -- Erreur volontaire : raison sociale saisie autrement dans le WMS (forme juridique, casse).
@@ -114,6 +114,8 @@ export function generationSql(size) {
             CASE WHEN po.ScheduleLineDeliveryDate > DATE '${AS_OF}' THEN NULL
                  ELSE (po.ScheduleLineDeliveryDate + INTERVAL ((CASE WHEN u(n, 41) < (CASE WHEN po.Supplier IN (lifnr(1), lifnr(3)) THEN ${z.lateSupplierBias} ELSE 0.12 END) THEN 3 + u(n, 42) * 12 ELSE 0 END)::INTEGER) DAY)::DATE END AS ActualDate,
             po.OrderQuantity AS Quantity,
+            ['Atlantic Lines', 'EuroRail Cargo', 'SkyFreight', 'TransAlpes', 'Nord Express'][1 + (n % 5)] AS Carrier,
+            ['MARITIME', 'AERIEN', 'ROUTE', 'FERROVIAIRE'][1 + (n % 4)] AS TransportMode,
             (TIMESTAMP '${AS_OF} 08:00:00' - INTERVAL (n % 30) DAY) AS UpdatedTimestamp
      FROM (SELECT n FROM range(1, ${z.shipments + 1}) t(n)) k
      JOIN sap_purchase_orders po ON po.PurchaseOrder = (4500000000 + k.n)::VARCHAR
@@ -148,7 +150,7 @@ export function generationSql(size) {
   ];
 }
 
-export const TABLES = ["sap_suppliers", "sap_purchase_orders", "pim_products", "wms_facilities", "wms_stock", "wms_shipments", "oms_order_lines", "lake_sales"];
+export const TABLES = ["sap_suppliers", "sap_purchase_orders", "pim_products", "wms_facilities", "wms_stock", "tms_shipments", "oms_order_lines", "lake_sales"];
 
 // Vérité terrain des erreurs volontaires, calculée par requête (les deux tailles).
 export const GROUND_TRUTH_SQL = {
@@ -159,7 +161,7 @@ export const GROUND_TRUTH_SQL = {
   unknownFacilities: `SELECT count(*) FROM wms_stock WHERE FacilityId = 'WHXXX'`,
   lowercaseOmsRefs: `SELECT count(*) FROM oms_order_lines WHERE ProductRef <> upper(ProductRef)`,
   stockouts: `SELECT count(*) FROM wms_stock WHERE OnHand - Allocated < SafetyStock`,
-  variantOriginNames: `SELECT count(DISTINCT OriginName) FROM wms_shipments WHERE OriginName LIKE '% Ltd'`,
+  variantOriginNames: `SELECT count(DISTINCT OriginName) FROM tms_shipments WHERE OriginName LIKE '% Ltd'`,
   countryDivergentSuppliers: `SELECT count(DISTINCT s.Supplier) FROM pim_products p JOIN sap_suppliers s ON s.SupplierName = p.supplierName AND s.LegacySupplierId IS DISTINCT FROM 'x' WHERE p.supplierCountry <> s.Country AND p.supplierTaxId NOT LIKE 'FR99%' AND s.SupplierName <> upper(s.SupplierName)`,
-  lateShipments: `SELECT count(*) FROM wms_shipments WHERE ActualDate > ExpectedDate OR (ActualDate IS NULL AND ExpectedDate < DATE '${AS_OF}')`,
+  lateShipments: `SELECT count(*) FROM tms_shipments WHERE ActualDate > ExpectedDate OR (ActualDate IS NULL AND ExpectedDate < DATE '${AS_OF}')`,
 };
