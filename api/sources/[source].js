@@ -3,6 +3,14 @@ import { catalog, lakeAggregate, odata, odataMetadata, restPage, scalePage, SOUR
 
 // SI multi-sources : /api/sources/{index|sap|pim|manhattan|oms|lake}
 // SAP est aussi exposé sous /sap/opu/odata/sap/<service>/<entité> (réécriture vercel.json).
+// Plafond de requêtes scale par instance et par client : 60 par minute, au-delà 429.
+const SCALE_RATE = 60, hits = new Map();
+function overScaleRate(request) {
+  const key = String(request.headers?.["x-forwarded-for"] || "local").split(",")[0].trim(), now = Date.now();
+  const h = hits.get(key); if (!h || now - h.t > 60_000) { hits.set(key, { t: now, n: 1 }); if (hits.size > 5000) hits.clear(); return false; }
+  return ++h.n > SCALE_RATE;
+}
+
 export default async function handler(request, response) {
   const gate = beginRequest(request, response, ["GET", "HEAD"]);
   if (!gate.ok) return;
@@ -18,8 +26,11 @@ export default async function handler(request, response) {
   if (q.size === "scale" || q.volume === "scale") {
     const name = source === "sap" ? String(q.entity || "") : String(q.resource || Object.keys(SOURCES[source].resources)[0]);
     const base = source === "sap" ? (name === "A_Supplier" ? "/sap/opu/odata/sap/API_BUSINESS_PARTNER/A_Supplier" : `/sap/opu/odata/sap/API_PURCHASEORDER_PROCESS_SRV/${name}`) : "";
+    if (overScaleRate(request)) { response.setHeader("Retry-After", "60"); return sendError(response, 429, "RATE_LIMITED", "Plafond de 60 requêtes par minute en taille scale.", gate.requestId); }
     const r = scalePage(source, name, q, base);
     response.setHeader("X-Generated-On-The-Fly", "true");
+    // Pages déterministes (graine fixe) : mises en cache par le CDN un jour.
+    if (r.status === 200) response.setHeader("Cache-Control", "public, s-maxage=86400, stale-while-revalidate=604800");
     return response.status(r.status).json(r.body);
   }
 
