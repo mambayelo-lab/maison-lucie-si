@@ -244,10 +244,14 @@ npm run test:channels     # 95 tests : chaque canal autorisé redonne les mêmes
 - `aps?resource=atp-checks` : `PromisedDate` et `ConfirmedAvailabilityDate` des lignes clients ouvertes (contrôle ATP) ;
 - `aps?resource=demand-signals` : `BullwhipRatio` et `DemandPeakPct` par article (outil de planification) ;
 - `qms?resource=supplier-quality` : `RejectedLotsPct` par fournisseur (outil qualité) ;
+- SAP `A_ProductSupplyPlanning.ABCIndicator` : classe ABC de l'article (MARC-MAABC) ;
+- `srm?resource=country-exposure` : `SpendSharePct` (part des achats d'une famille par pays d'origine) et `ActiveSourcesInCountry` (analyse des dépenses du SRM ; ligne Composants/CN marquée `_scenario: "illustratif"`) ;
+- `srm?resource=eudr-statements` : `EudrCommodity`, `DdsReferenceNumber` (déclaration de diligence raisonnable TRACES, vide si absente), `GeolocationProvided` (règlement (UE) 2023/1115, application au 30/12/2026) ;
+- `tms?resource=customs-cbam` : `CnCode`, `NetMassTonnes`, `CumulativeCbamNetMassTonnes` (cumul annuel fourni par l'outil douane) et `DeMinimisThresholdTonnes` = 50 (règlement 2025/2083 ; volumes illustratifs) ;
 - `tms?resource=shipment-emissions` : `Co2eKg` par expédition (ISO 14083, GLEC) ;
 - SAP `API_PURCHASEORDER_PROCESS_SRV/A_PurOrdSupplierConfirmation` : `RequestedDeliveryDate` (EKET) et `ConfirmedDeliveryDate` (EKES, vide si non confirmée).
 
-Pour couvrir la résilience (TTS/TTR), la crise sanitaire, les détroits, la qualité, le risque, la certification, les rappels et le devoir de vigilance, 27 ressources ont été ajoutées. Elles reprennent des objets et des champs **standard** des applications du marché, sous leur nom d'API. Elles sont calculées de façon déterministe à partir des tables existantes (mêmes identifiants), en taille démo seulement (`size=scale` renvoie `400 DEMO_SIZE_ONLY`), et sont servies par tous les canaux (`lib/si-extensions.js`, `scripts/test-extensions.mjs`).
+Pour couvrir la résilience (TTS/TTR), la crise sanitaire, les détroits, la qualité, le risque, la certification, les rappels et le devoir de vigilance, 30 ressources ont été ajoutées. Elles reprennent des objets et des champs **standard** des applications du marché, sous leur nom d'API. Elles sont calculées de façon déterministe à partir des tables existantes (mêmes identifiants), en taille démo seulement (`size=scale` renvoie `400 DEMO_SIZE_ONLY`), et sont servies par tous les canaux (`lib/si-extensions.js`, `scripts/test-extensions.mjs`).
 
 | Ressource (API) | Équivalent réel | Champs et table ou objet d'origine |
 |---|---|---|
