@@ -238,7 +238,13 @@ npm run test:channels     # 95 tests : chaque canal autorisé redonne les mêmes
 
 ## Champs standard ajoutés (tous les cas d'Aura)
 
-Pour couvrir la résilience (TTS/TTR), la crise sanitaire, les détroits, la qualité, le risque, la certification, les rappels et le devoir de vigilance, 20 ressources ont été ajoutées. Elles reprennent des objets et des champs **standard** des applications du marché, sous leur nom d'API. Elles sont calculées de façon déterministe à partir des tables existantes (mêmes identifiants), en taille démo seulement (`size=scale` renvoie `400 DEMO_SIZE_ONLY`), et sont servies par tous les canaux (`lib/si-extensions.js`, `scripts/test-extensions.mjs`).
+**Valeurs de planification fournies par le SI (30 septembre 2026).** Aura ne calcule rien : il lit. Maison Lucie sert donc, comme le ferait un APS, les valeurs que les règles d'Aura comparent à des seuils :
+- `aps?resource=supply-positions` : par article et par site, `CoverageDays`, `TimeToSurviveDays` (TTS), `TimeToRecoverDays` (TTR), `RevenueAtRiskEur` (CA à risque), `ProjectedStockoutDate`, `NextReceiptDate` (équivalents : SAP IBP, MD04, Kinaxis, o9) ;
+- `aps?resource=lead-time-review` : `PlannedLeadTimeDays` (MARC-PLIFZ) et `ActualLeadTimeMedianDays` (évaluation fournisseur) ;
+- `aps?resource=atp-checks` : `PromisedDate` et `ConfirmedAvailabilityDate` des lignes clients ouvertes (contrôle ATP) ;
+- SAP `API_PURCHASEORDER_PROCESS_SRV/A_PurOrdSupplierConfirmation` : `RequestedDeliveryDate` (EKET) et `ConfirmedDeliveryDate` (EKES, vide si non confirmée).
+
+Pour couvrir la résilience (TTS/TTR), la crise sanitaire, les détroits, la qualité, le risque, la certification, les rappels et le devoir de vigilance, 24 ressources ont été ajoutées. Elles reprennent des objets et des champs **standard** des applications du marché, sous leur nom d'API. Elles sont calculées de façon déterministe à partir des tables existantes (mêmes identifiants), en taille démo seulement (`size=scale` renvoie `400 DEMO_SIZE_ONLY`), et sont servies par tous les canaux (`lib/si-extensions.js`, `scripts/test-extensions.mjs`).
 
 | Ressource (API) | Équivalent réel | Champs et table ou objet d'origine |
 |---|---|---|
