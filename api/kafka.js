@@ -1,6 +1,7 @@
 import { beginRequest, authenticateApplication, authenticateGateway, authorizeApplication, requestHeader, sendError, unauthorized } from "../lib/http-api.js";
 import { readAllDatasets, readDataset, writeDataset } from "../lib/persistence.js";
 import { LEGACY_TOPIC, parseTopic, tableNames, kebab, topicCatalog, topicMessages } from "../lib/access.js";
+import { CACHE_HEADER, RESOURCES, allRows, channelName, kafkaPage, parseChannel } from "../lib/channels.js";
 
 // Pont HTTP "Kafka-compatible" (aucun broker embarqué) :
 // - topic historique lucie.supplychain.events (lecture + publication) ;
@@ -24,6 +25,21 @@ export default async function handler(request, response) {
   const listTopics = request.method === "GET" && params.topics !== undefined;
   const topic = String(params.topic || LEGACY_TOPIC);
   const derived = LEGACY_ALIASES.has(topic) ? null : parseTopic(topic);
+  // SI multi-sources (9 applications) : topics lucie.<source>.<ressource>, lecture seule, jeton passerelle.
+  const multi = !derived && !LEGACY_ALIASES.has(topic) ? parseChannel(topic) : null;
+  if (multi) {
+    if (!authenticateGateway(request)) return unauthorized(response, ctx.requestId);
+    if (request.method === "POST") return sendError(response, 403, "TOPIC_READ_ONLY", "Les topics des applications sont en lecture seule.", ctx.requestId, { topic });
+    const offset = intParam(params.offset, 0), limit = intParam(params.limit, 100);
+    if (!Number.isInteger(offset) || offset < 0) return sendError(response, 400, "INVALID_OFFSET", "offset must be a non-negative integer.", ctx.requestId);
+    if (!Number.isInteger(limit) || limit < 1 || limit > 1000) return sendError(response, 400, "INVALID_LIMIT", "limit must be an integer between 1 and 1000.", ctx.requestId);
+    const body = kafkaPage(multi, offset, limit);
+    response.setHeader("Cache-Control", CACHE_HEADER);
+    response.setHeader("X-Next-Offset", String(body.nextOffset));
+    response.setHeader("X-End-Offset", String(body.endOffset));
+    if (params.format === "cloudevents") { response.setHeader("Content-Type", "application/cloudevents-batch+json; charset=utf-8"); return response.status(200).send(JSON.stringify(body.messages.map(m => m.value))); }
+    return response.status(200).json({ ...body, requestId: ctx.requestId });
+  }
 
   // Autorisation : identifiants kafka-stream (historique), jeton passerelle, ou identifiants de l'application propriétaire du topic.
   const allowed = (await authenticateApplication(request, "kafka-stream")) || authenticateGateway(request) || (derived ? await authorizeApplication(request, derived.appId) : false);
@@ -31,7 +47,7 @@ export default async function handler(request, response) {
 
   if (listTopics) {
     const datasets = await readAllDatasets();
-    return response.status(200).json({ protocol: "kafka-compatible-http", topics: topicCatalog(datasets), synthetic: true, requestId: ctx.requestId });
+    return response.status(200).json({ protocol: "kafka-compatible-http", topics: [...topicCatalog(datasets), ...RESOURCES.map(d => ({ topic: channelName(d), appId: d.source, table: d.resource, partitions: 1, writable: false, messageCount: allRows(d).length }))], synthetic: true, requestId: ctx.requestId });
   }
   if (!LEGACY_ALIASES.has(topic) && !derived) return sendError(response, 404, "UNKNOWN_TOPIC", "Unknown topic. GET /api/kafka?topics lists the available topics.", ctx.requestId, { topic });
 

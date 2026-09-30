@@ -36,7 +36,7 @@ ok("Manhattan page/size + fenêtre temporelle", () => {
   const w = restPage("tms", "shipments", { from: "2026-09-20", to: "2026-09-25" });
   assert.ok(w.body.total > 0 && w.body.total < 800);
   // Paysage : 9 applications, chacune avec son rôle et ses clés.
-  assert.deepEqual(Object.keys(catalog().sources), ["sap", "pim", "manhattan", "tms", "aps", "srm", "qms", "oms", "lake"]);
+  assert.deepEqual(Object.keys(catalog().sources), ["sap", "pim", "manhattan", "tms", "aps", "srm", "qms", "oms", "hr", "lake"]);
   assert.ok(restPage("aps", "forecasts", { limit: "5" }).body.items[0].Week);
   assert.ok(restPage("srm", "suppliers", { limit: "5" }).body.items[0].SrmId);
   assert.ok(restPage("qms", "nonconformities", { limit: "5" }).body.items[0].NcId);
@@ -104,7 +104,10 @@ console.log(`  ok handler HTTP\n${n + 1} tests multi-sources OK`);
 {
   // Chaque ressource de chaque application existe aussi en taille scale.
   const { scalePage, SOURCES } = await import("../lib/multisource-api.js");
+  const { EXTENSION_RESOURCES } = await import("../lib/si-extensions.js");
   for (const [src, def] of Object.entries(SOURCES)) for (const name of Object.keys(def.entities ?? def.resources)) {
+    // Tables standard ajoutées (résilience, pandémie, détroits, qualité) : taille démo seulement, refus explicite en scale.
+    if (EXTENSION_RESOURCES[src]?.[name]) { assert.equal(scalePage(src, name, {}).body.error.code, "DEMO_SIZE_ONLY"); continue; }
     const r = scalePage(src, name, src === "sap" ? { $top: "2" } : { limit: "2", size: "2" });
     assert.equal(r.status, 200, `${src}/${name}`);
   }

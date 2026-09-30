@@ -2,6 +2,8 @@ import { beginRequest, authenticateApplication, authorizeApplication, requestHea
 import { readAllDatasets } from "../lib/persistence.js";
 import { APP_IDS, applyFilter, plural, tableNames, tableRecords } from "../lib/access.js";
 import { applications } from "../lib/demo-data.js";
+import { CACHE_HEADER, MAX_PAGE, RESOURCES, SOURCE_IDS, columnsOf, findResource, readRows, recordTag, rowXml } from "../lib/channels.js";
+import { authenticateGateway as gatewayToken } from "../lib/http-api.js";
 
 // SOAP 1.1 multi-application.
 // - ?wsdl[&app=<id>] : WSDL (toutes les applications ou une seule).
@@ -74,6 +76,7 @@ export default async function handler(request, response) {
   if (!ctx.ok) return;
   const url = new URL(request.url || "/api/soap", "https://maison-lucie-si.vercel.app");
   const params = { ...Object.fromEntries(url.searchParams), ...(request.query || {}) };
+  if (params.source !== undefined) return multiSource(request, response, ctx, params, url);
   const datasets = await readAllDatasets();
   const requestedApp = params.app ? String(params.app) : "";
   if (requestedApp && !APP_IDS.includes(requestedApp)) return fault(response, 404, "Client", `Unknown application "${requestedApp}".`);
@@ -120,4 +123,44 @@ export default async function handler(request, response) {
   response.setHeader("Content-Type", "text/xml; charset=utf-8");
   response.setHeader("X-Record-Count", String(page.length));
   return response.status(200).send(envelope(`<${responseName} xmlns="${NS}" application="${target.appId}" table="${target.table}" total="${rows.length}" synthetic="true"><${wrapper}>${records}</${wrapper}></${responseName}>`));
+}
+
+// ── SI multi-sources (9 applications) : ?source=<id>[&resource=<ressource>] ──
+// Opération GetRecords(resource, limit ≤ 1000, offset, filterField, filterValue) ; valeurs typées (xsi:type).
+const XSD_T = { integer: "xsd:long", decimal: "xsd:decimal", boolean: "xsd:boolean", date: "xsd:string", datetime: "xsd:string", string: "xsd:string" };
+function multiWsdl(source) {
+  const defs = RESOURCES.filter(r => r.source === source);
+  const types = defs.map(d => `<xsd:complexType name="${d.typeName}"><xsd:sequence>${columnsOf(d).map(c => `<xsd:element name="${c.name}" type="${XSD_T[c.type]}" nillable="true" minOccurs="0"/>`).join("")}</xsd:sequence></xsd:complexType>`).join("");
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<definitions name="Lucie_${source}" targetNamespace="${NS}/${source}" xmlns="http://schemas.xmlsoap.org/wsdl/" xmlns:soap="http://schemas.xmlsoap.org/wsdl/soap/" xmlns:tns="${NS}/${source}" xmlns:xsd="http://www.w3.org/2001/XMLSchema">
+  <documentation>Maison Lucie — ${source} (${defs.map(d => d.resource).join(", ")}). Données synthétiques. Auth : Bearer jeton passerelle.</documentation>
+  <types><xsd:schema targetNamespace="${NS}/${source}" elementFormDefault="qualified">${types}<xsd:element name="GetRecords"><xsd:complexType><xsd:sequence><xsd:element name="resource" type="xsd:string"/><xsd:element name="limit" type="xsd:int" minOccurs="0"/><xsd:element name="offset" type="xsd:int" minOccurs="0"/><xsd:element name="filterField" type="xsd:string" minOccurs="0"/><xsd:element name="filterValue" type="xsd:string" minOccurs="0"/></xsd:sequence></xsd:complexType></xsd:element><xsd:element name="GetRecordsResponse"><xsd:complexType><xsd:sequence><xsd:any minOccurs="0" maxOccurs="unbounded" processContents="lax"/></xsd:sequence><xsd:attribute name="total" type="xsd:int"/><xsd:attribute name="nextOffset" type="xsd:int"/></xsd:complexType></xsd:element></xsd:schema></types>
+  <message name="GetRecordsRequest"><part name="parameters" element="tns:GetRecords"/></message><message name="GetRecordsResponse"><part name="parameters" element="tns:GetRecordsResponse"/></message>
+  <portType name="LuciePort"><operation name="GetRecords"><input message="tns:GetRecordsRequest"/><output message="tns:GetRecordsResponse"/></operation></portType>
+  <binding name="LucieBinding" type="tns:LuciePort"><soap:binding style="document" transport="http://schemas.xmlsoap.org/soap/http"/><operation name="GetRecords"><soap:operation soapAction="${NS}/${source}/GetRecords"/><input><soap:body use="literal"/></input><output><soap:body use="literal"/></output></operation></binding>
+  <service name="Lucie_${source}"><port name="LuciePort" binding="tns:LucieBinding"><soap:address location="/api/soap?source=${source}"/></port></service>
+</definitions>`;
+}
+function multiSource(request, response, ctx, params, url) {
+  const source = String(params.source);
+  if (!SOURCE_IDS.includes(source)) return fault(response, 404, "Client", `Unknown source "${source}" (${SOURCE_IDS.join(", ")}).`);
+  if (request.method === "GET") {
+    if (params.wsdl === undefined && !url.searchParams.has("wsdl")) return fault(response, 400, "Client", "Use GET ?wsdl&source= for discovery or POST a SOAP 1.1 envelope.");
+    response.setHeader("Content-Type", "text/xml; charset=utf-8");
+    response.setHeader("Cache-Control", CACHE_HEADER);
+    return response.status(200).send(multiWsdl(source));
+  }
+  if (!gatewayToken(request)) return unauthorized(response, ctx.requestId, "Bearer");
+  const payload = typeof request.body === "string" ? request.body : Buffer.isBuffer(request.body) ? request.body.toString("utf8") : "";
+  if (payload && !/<(?:\w+:)?Envelope/.test(payload) && !/<(?:\w+:)?GetRecords/.test(payload)) return fault(response, 400, "Client", "Body must be a SOAP 1.1 envelope with a GetRecords element.");
+  const def = findResource(source, readTag(payload, "resource") ?? params.resource ?? RESOURCES.find(r => r.source === source).resource);
+  if (!def) return fault(response, 404, "Client", `Unknown resource for ${source}.`);
+  const limit = Math.min(MAX_PAGE, Math.max(1, Number.parseInt(readTag(payload, "limit") ?? params.limit ?? "100", 10) || 100));
+  const offset = Math.max(0, Number.parseInt(readTag(payload, "offset") ?? params.offset ?? "0", 10) || 0);
+  const ff = readTag(payload, "filterField") ?? params.filterField, fv = readTag(payload, "filterValue") ?? params.filterValue;
+  const r = readRows(def, { filters: ff ? [{ field: ff, op: "eq", value: fv }] : [], offset, limit });
+  const cols = columnsOf(def);
+  response.setHeader("Content-Type", "text/xml; charset=utf-8");
+  response.setHeader("X-Record-Count", String(r.rows.length));
+  return response.status(200).send(`<?xml version="1.0" encoding="UTF-8"?><soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema"><soap:Body><GetRecordsResponse xmlns="${NS}/${source}" source="${source}" resource="${def.resource}" total="${r.total}"${r.nextOffset !== null ? ` nextOffset="${r.nextOffset}"` : ""} synthetic="true"><records>${r.rows.map(row => rowXml(recordTag(def), row, cols)).join("")}</records></GetRecordsResponse></soap:Body></soap:Envelope>`);
 }

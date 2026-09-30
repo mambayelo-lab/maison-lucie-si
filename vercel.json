@@ -1,5 +1,8 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
+  "regions": [
+    "cdg1"
+  ],
   "rewrites": [
     {
       "source": "/",
@@ -24,6 +27,130 @@
     {
       "source": "/sap/opu/odata/sap/API_PURCHASEORDER_PROCESS_SRV/:entity",
       "destination": "/api/sources/sap?entity=:entity"
+    },
+    {
+      "source": "/sap/opu/odata/sap/API_PURCHASING_SOURCE_SRV/:entity",
+      "destination": "/api/sources/sap?entity=:entity"
+    },
+    {
+      "source": "/sap/opu/odata/sap/API_INFORECORD_PROCESS_SRV/:entity",
+      "destination": "/api/sources/sap?entity=:entity"
+    },
+    {
+      "source": "/sap/opu/odata/sap/API_PRODUCT_SRV/:entity",
+      "destination": "/api/sources/sap?entity=:entity"
+    },
+    {
+      "source": "/sap/opu/odata/sap/API_SLSPRICINGCONDITIONRECORD_SRV/:entity",
+      "destination": "/api/sources/sap?entity=:entity"
+    },
+    {
+      "source": "/sap/opu/odata/sap/API_MATERIAL_DOCUMENT_SRV/:entity",
+      "destination": "/api/sources/sap?entity=:entity"
+    },
+    {
+      "source": "/mcp",
+      "destination": "/api/hub?ch=mcp"
+    },
+    {
+      "source": "/channels",
+      "destination": "/api/hub?ch=index"
+    },
+    {
+      "source": "/odata/v4/:source",
+      "destination": "/api/hub?ch=odata4&source=:source"
+    },
+    {
+      "source": "/odata/v4/:source/:path*",
+      "destination": "/api/hub?ch=odata4&source=:source&path=:path*"
+    },
+    {
+      "source": "/sap/idoc/:type",
+      "destination": "/api/hub?ch=idoc&type=:type"
+    },
+    {
+      "source": "/sap/bc/rfc",
+      "destination": "/api/hub?ch=rfc"
+    },
+    {
+      "source": "/services/oauth2/token",
+      "destination": "/api/hub?ch=sf&path=oauth2/token"
+    },
+    {
+      "source": "/services/data/:version",
+      "destination": "/api/hub?ch=sf&version=:version"
+    },
+    {
+      "source": "/services/data/:version/:path*",
+      "destination": "/api/hub?ch=sf&version=:version&path=:path*"
+    },
+    {
+      "source": "/api/queues",
+      "destination": "/api/hub?ch=amqp"
+    },
+    {
+      "source": "/api/queues/:vhost/:queue",
+      "destination": "/api/hub?ch=amqp&vhost=:vhost&queue=:queue"
+    },
+    {
+      "source": "/api/queues/:vhost/:queue/get",
+      "destination": "/api/hub?ch=amqp&vhost=:vhost&queue=:queue"
+    },
+    {
+      "source": "/ibmmq/rest/v2/messaging/qmgr/:qmgr/queue/:queue/message",
+      "destination": "/api/hub?ch=mq&qmgr=:qmgr&queue=:queue"
+    },
+    {
+      "source": "/cloudevents/:source/:resource",
+      "destination": "/api/hub?ch=ce&source=:source&resource=:resource"
+    },
+    {
+      "source": "/cdc/:source/:resource",
+      "destination": "/api/hub?ch=cdc&source=:source&resource=:resource"
+    },
+    {
+      "source": "/edi/edifact/:type",
+      "destination": "/api/hub?ch=edifact&type=:type"
+    },
+    {
+      "source": "/edi/x12/:type",
+      "destination": "/api/hub?ch=x12&type=:type"
+    },
+    {
+      "source": "/as2",
+      "destination": "/api/hub?ch=as2"
+    },
+    {
+      "source": "/as2/outbox",
+      "destination": "/api/hub?ch=as2&op=outbox"
+    },
+    {
+      "source": "/as2/message/:id",
+      "destination": "/api/hub?ch=as2&op=message&id=:id"
+    },
+    {
+      "source": "/sftp/ls",
+      "destination": "/api/hub?ch=sftp&op=ls"
+    },
+    {
+      "source": "/sftp/get",
+      "destination": "/api/hub?ch=sftp&op=get"
+    },
+    {
+      "source": "/sql",
+      "destination": "/api/hub?ch=sql"
+    },
+    {
+      "source": "/grpc/lucie.v1.RowService/ListRows",
+      "destination": "/api/hub?ch=grpc"
+    },
+    {
+      "source": "/esb/api/v1",
+      "destination": "/api/hub?ch=esb"
+    },
+    {
+      "source": "/esb/api/v1/:flow",
+      "destination": "/api/hub?ch=esb&flow=:flow"
     }
   ],
   "headers": [
@@ -53,6 +180,11 @@
     "deploymentEnabled": {
       "main": true,
       "*": false
+    }
+  },
+  "functions": {
+    "api/hub.js": {
+      "maxDuration": 10
     }
   }
 }

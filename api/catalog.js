@@ -38,6 +38,8 @@ export default async function handler(request, response) {
         token: "/api/token",
         openapi: "/api/openapi",
         configuration: "/api/catalog",
+        channels: "/channels",
+        mcp: "/mcp",
       },
     });
   }
