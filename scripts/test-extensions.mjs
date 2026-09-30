@@ -9,7 +9,7 @@ let n = 0; const ok = (name, fn) => { fn(); n++; console.log(`  ok ${name}`); };
 const sap = new Set(T.sap_suppliers.map(s => s.Supplier)), refs = new Set(T.pim_products.map(p => p.internalRef));
 
 ok("catalogue : 20 ressources ajoutées, source RH déclarée", () => {
-  assert.equal(Object.values(EXTENSION_RESOURCES).reduce((s, r) => s + Object.keys(r).length, 0), 24);
+  assert.equal(Object.values(EXTENSION_RESOURCES).reduce((s, r) => s + Object.keys(r).length, 0), 27);
   for (const [src, res] of Object.entries(EXTENSION_RESOURCES)) for (const [name, def] of Object.entries(res)) {
     assert.ok((SOURCES[src].entities ?? SOURCES[src].resources)[name], `${src}/${name}`);
     assert.ok(T[def.table].length > 0, def.table);
