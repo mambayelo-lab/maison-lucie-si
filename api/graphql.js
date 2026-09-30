@@ -3,12 +3,13 @@ import { accessContracts, camel, tableNames } from "../lib/access.js";
 import { buildSchema, execute, printSchema } from "../lib/graphql-mini.js";
 import { authenticateGateway, authorizeApplication, beginRequest, sendError } from "../lib/http-api.js";
 import { applications } from "../lib/demo-data.js";
-import { RESOURCES, SOURCE_IDS, allRows } from "../lib/channels.js";
+import { RESOURCES, SOURCE_IDS, allRows, channelAllowed } from "../lib/channels.js";
 import { SOURCES } from "../lib/multisource-api.js";
 
 // SI multi-sources (9 applications) : un champ racine par application (srcSap, srcPim, … srcLake),
 // une table par ressource (A_Supplier, Product, Inventory…), jeton passerelle.
-const MULTI_APPS = SOURCE_IDS.map(id => ({ id: `src-${id}`, name: SOURCES[id].label, marketReference: SOURCES[id].label, role: SOURCES[id].role, protocol: "GraphQL", auth: { type: "Bearer (jeton passerelle)" }, multi: true, source: id }));
+// Seules les applications qui exposent GraphQL (OMS / e-commerce) ont un champ racine.
+const MULTI_APPS = SOURCE_IDS.filter(id => channelAllowed("graphql", id)).map(id => ({ id: `src-${id}`, name: SOURCES[id].label, marketReference: SOURCES[id].label, role: SOURCES[id].role, protocol: "GraphQL", auth: { type: "Bearer (jeton passerelle)" }, multi: true, source: id }));
 const MULTI_DATASETS = Object.fromEntries(MULTI_APPS.map(app => {
   const defs = RESOURCES.filter(r => r.source === app.source);
   return [app.id, { entity: defs[0].typeName, records: allRows(defs[0]), tables: Object.fromEntries(defs.slice(1).map(d => [d.typeName, allRows(d)])) }];

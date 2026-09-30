@@ -83,4 +83,11 @@ ok("RES-FINANCE", "risque financier SRM en hausse de 15 points ou plus", [...new
   ok("RES-ESG", "évaluation ESG absente ou insuffisante", [...active].filter(v => !esg.has(v) || esg.get(v) >= 70 || certKo.has(v)).map(v => ({ v, esg: esg.get(v) ?? "absente" })));
 }
 assert.equal(Object.keys(hits).length, 11);
+// Cas réglés à la main : chaque ligne calibrée porte _scenario = "illustratif" (et seulement elles).
+const ill = t => T[t].filter(r => r._scenario === "illustratif");
+assert.equal(ill("sap_purchasing_sources").length, 6, "source unique : 6 articles");
+assert.equal(ill("sap_info_records").length, 6, "délai planifié allongé sur 6 articles");
+assert.ok(ill("sap_material_documents").every(r => ["0000100003", "0000100006"].includes(r.Supplier)) && ill("sap_material_documents").length > 0, "dérive des délais");
+assert.deepEqual(ill("tms_events").map(e => [e.EventCode, e.Location]), [["CONGESTION", "FRLEH"]], "port congestionné");
+console.log("scénarios illustratifs marqués : source unique, dérive des délais, port congestionné");
 console.log("test-alert-cases : 11 alertes déclenchées de façon reproductible");

@@ -119,45 +119,60 @@ Les erreurs sont injectées par des règles déterministes. La vérité terrain 
 
 Le récit reprend les 15 fournisseurs et les 20 articles des alertes existantes (`SUP-001` Tessitura Milano, `CLASP-AURORA`…). Tessitura Milano et Shenzhen Atelier Components ont un taux de retard élevé, et des articles du récit sont en rupture sur un site. Les alertes existantes (`ALT-*`, jeux `lib/demo-data.js`) sont inchangées et restent reproductibles.
 
-## Canaux d'échange : toutes les capacités usuelles, et MCP
+## Canaux d'échange : protocoles réalistes par application, et MCP
 
-Les 9 applications sont joignables par tous les canaux d'échange usuels. Une seule lecture canonique (`lib/channels.js`, `readRows`) alimente tous les canaux : **les lignes lues sont identiques quel que soit le canal**, seuls l'enveloppe et le transport changent. `scripts/test-channels.mjs` le vérifie pour les 41 ressources. Tout est simulé, déterministe et en lecture seule : aucun broker, aucun appel sortant.
+Chaque application ne répond que sur les canaux que **ce type d'outil expose réellement sur le marché**. Un autre canal renvoie `404 CHANNEL_NOT_OFFERED`, avec la liste des canaux disponibles (gRPC : `grpc-status: 12` ; GraphQL : champ racine absent du schéma ; SOAP : faute `Client`). La matrice est dans `lib/channels.js` (`PROTOCOLS`) et publiée par l'index `GET /channels` (`sources[].channels`, `sources[].nativeChannel`). Une seule lecture canonique (`readRows`) alimente tous les canaux : **les lignes lues sont identiques sur chaque canal autorisé**, seuls l'enveloppe et le transport changent. `scripts/test-channels.mjs` le vérifie pour les 41 ressources, et vérifie le refus des canaux non autorisés. Tout est simulé, déterministe et en lecture seule : aucun broker, aucun appel sortant.
+
+L'ESB et MCP sont des **passerelles transverses** : ouverts pour toutes les applications (ils se branchent devant les API des outils). REST reste ouvert pour toutes les applications sauf SAP (dont l'accès « REST » est OData v2).
 
 L'index public des canaux est servi par `GET /channels`. Tous les autres points d'accès demandent le jeton passerelle (`Authorization: Bearer lucie_aura_gateway_demo_token`) ; RabbitMQ, IBM MQ et RFC acceptent aussi `Basic <utilisateur>:<jeton>`.
 
-### Tableau « canal × application »
+### Protocoles par type d'outil (natif en premier)
 
-Légende : ✅ déjà présent avant ce lot · 🆕 ajouté · — sans objet (le canal n'existe pas pour ce type d'application dans la réalité).
+| Application | Type d'outil (éditeurs types) | Canaux offerts | Source publique | À confirmer |
+|---|---|---|---|---|
+| sap | ERP (SAP S/4HANA) | OData v2, OData v4, RFC/BAPI, IDoc, SOAP, EDIFACT, X12, AS2 | [SAP S/4HANA : REST et SOAP](https://radar.apideck.com/blog/guide-to-sap-4-hana-rest-and-soap-api), [API au lieu d'IDoc pour l'EDI (Seeburger)](https://blog.seeburger.com/edi-connection-sap-s4hana-with-apis-instead-of-idocs/) | l'EDI passe par le traducteur EDI du client |
+| pim | PIM (Akeneo, Salsify) | REST, fichiers SFTP | [API REST Akeneo](https://api.akeneo.com/documentation/why-the-api.html), [connecteur SFTP Akeneo](https://wearepatchworks.com/products/akeneo-sftp-connector-integration) | Salsify : à confirmer |
+| manhattan | WMS (Manhattan Active WM, Reflex, SAP EWM) | REST, SOAP, fichiers SFTP, IBM MQ, AMQP | [Manhattan Active : API REST](https://docs.nexla.com/user-guides/connectors/manhattan_api/overview) | SOAP, fichiers et files de messages selon l'éditeur et l'intergiciel du client ; IDoc seulement pour SAP EWM (non simulé ici) |
+| tms | TMS (Blue Yonder, SAP TM) | REST, EDIFACT, X12, AS2, fichiers SFTP, IBM MQ, AMQP | [Blue Yonder TMS : EDI X12/EDIFACT par AS2, SFTP et API](https://www.stacksync.com/edi/dsv/dsv-via-blue-yonder) | files de messages selon l'intergiciel ; **pas d'IDoc** (DESADV01 refusé) |
+| aps | APS (Kinaxis, o9) | REST, fichiers SFTP | [Kinaxis : API, services web et fichiers](https://www.makini.io/integrations/kinaxis-rapidresponse) | o9 : à confirmer |
+| srm | SRM (Coupa, SAP Ariba) | REST, SOAP, fichiers SFTP | [Coupa : API REST et fichiers CSV](https://compass.coupa.com/en-us/products/core-platform/integration-playbooks-and-resources/other-integration-playbooks/invoicing-platform-integration/build-your-integration/using-the-api), [Ariba : services web SOAP](https://www.cleverence.com/amp/articles/sap-documentation/web-services-overview-sap-ariba-4827/) | cXML n'est pas simulé |
+| qms | QMS (ETQ, SAP QM, MasterControl) | REST, SOAP | — | à confirmer selon l'éditeur |
+| oms | OMS / e-commerce (Salesforce Commerce, Shopify) | REST, GraphQL, webhooks (CloudEvents), Salesforce REST/Bulk, gRPC-web | [Shopify : API GraphQL Admin et webhooks](https://shopify.dev/docs/api/admin-graphql/latest/objects/WebhookSubscription) | gRPC : l'API Pub/Sub de Salesforce est en gRPC, à confirmer pour le périmètre OMS ; Shopify n'en a pas |
+| hr | SIRH (Workday, SAP SuccessFactors) | SOAP, REST, OData v4, fichiers SFTP | [Workday : API SOAP](https://community-content.workday.com/en-us/public/products/platform-and-product-extensions/soap-api-reference.html), [SuccessFactors : OData v2 et v4](https://www.cdata.com/drivers/sapsuccessfactors/odata/) | fichiers (Workday EIB) à confirmer |
+| lake | Lac de données (Snowflake, Databricks) | SQL/JDBC, REST, fichiers SFTP (Parquet), Kafka, CDC | [Snowflake : connecteur Kafka et JDBC](https://docs.snowflake.com/en/user-guide/kafka-connector) | — |
+| toutes | passerelles | ESB, MCP | — | — |
 
-| Canal | ERP SAP | PIM | WMS | TMS | APS | SRM | QMS | OMS | RH (SuccessFactors) | Data lake | Point d'accès |
-|---|---|---|---|---|---|---|---|---|---|---|---|
-| REST | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | 🆕 | ✅ | `/api/sources/{source}?resource=` |
-| OData v2 (SAP) | ✅ | — | — | — | — | — | — | — | — | — | `/sap/opu/odata/sap/…` |
-| OData v4 | 🆕 | 🆕 | 🆕 | 🆕 | 🆕 | 🆕 | 🆕 | 🆕 | 🆕 | 🆕 | `/odata/v4/{source}/{EntitySet}`, `$metadata` |
-| GraphQL | 🆕 | 🆕 | 🆕 | 🆕 | 🆕 | 🆕 | 🆕 | 🆕 | 🆕 | 🆕 | `/api/graphql` (champs `srcSap` … `srcLake`) |
-| SOAP 1.1 | 🆕 | 🆕 | 🆕 | 🆕 | 🆕 | 🆕 | 🆕 | 🆕 | 🆕 | 🆕 | `/api/soap?source=` (`GetRecords`, WSDL typé) |
-| SAP IDoc XML | 🆕 ORDERS05, CREMAS05 | 🆕 MATMAS05 | — | 🆕 DESADV01 | — | — | — | — | — | — | `/sap/idoc/{type}` |
-| SAP RFC / BAPI (JSON-RPC) | 🆕 | — | — | — | — | — | — | — | — | — | `POST /sap/bc/rfc` |
-| Salesforce REST (SOQL) et Bulk API 2.0 | 🆕 | 🆕 | 🆕 | 🆕 | 🆕 | 🆕 | 🆕 | 🆕 | 🆕 | 🆕 | `/services/data/v60.0/query`, `/jobs/query` |
-| Kafka (HTTP) | 🆕 | 🆕 | 🆕 | 🆕 | 🆕 | 🆕 | 🆕 | 🆕 | 🆕 | 🆕 | `/api/kafka?topic=lucie.{source}.{resource}` |
-| AMQP · RabbitMQ | 🆕 | 🆕 | 🆕 | 🆕 | 🆕 | 🆕 | 🆕 | 🆕 | 🆕 | 🆕 | `POST /api/queues/%2F/{file}/get` |
-| IBM MQ | 🆕 | 🆕 | 🆕 | 🆕 | 🆕 | 🆕 | 🆕 | 🆕 | 🆕 | 🆕 | `/ibmmq/rest/v2/messaging/qmgr/LUCIEQM/queue/{FILE}/message` |
-| CloudEvents / webhooks | 🆕 | 🆕 | 🆕 | 🆕 | 🆕 | 🆕 | 🆕 | 🆕 | 🆕 | 🆕 | `/cloudevents/{source}/{resource}` |
-| CDC (Debezium) | 🆕 | 🆕 | 🆕 | 🆕 | 🆕 | 🆕 | 🆕 | 🆕 | 🆕 | 🆕 | `/cdc/{source}/{resource}` |
-| EDIFACT D.96A | 🆕 ORDERS, INVOIC | — | — | 🆕 DESADV | — | — | — | — | — | — | `/edi/edifact/{type}` |
-| ANSI X12 004010 | 🆕 850, 810 | — | — | 🆕 856 | — | — | — | — | — | — | `/edi/x12/{type}` |
-| AS2 | 🆕 | — | — | 🆕 | — | — | — | — | — | — | `/as2/outbox`, `/as2/message/{id}`, `POST /as2` |
-| Fichiers CSV | — | — | — | — | — | — | — | ✅ | — | ✅ | (avant : `format=csv`) |
-| Fichiers CSV, JSON, XML, Parquet (SFTP) | 🆕 | 🆕 | 🆕 | 🆕 | 🆕 | 🆕 | 🆕 | 🆕 | 🆕 | 🆕 | `/sftp/ls`, `/sftp/get?path=/outbound/…` |
-| SQL / JDBC (lecture seule) | — | — | — | — | — | — | — | — | — | 🆕 (et flux J-1 de 6 applications) | `POST /sql` |
-| Agrégat poussé à la source | — | — | — | — | — | — | — | — | — | ✅ | `?aggregate=1&groupBy=` |
-| gRPC-web | 🆕 | 🆕 | 🆕 | 🆕 | 🆕 | 🆕 | 🆕 | 🆕 | 🆕 | 🆕 | `POST /grpc/lucie.v1.RowService/ListRows` |
-| ESB / iPaaS (demi-flux) | 🆕 | 🆕 | 🆕 | 🆕 | 🆕 | 🆕 | 🆕 | 🆕 | 🆕 | 🆕 | `/esb/api/v1/{flux}` |
-| MCP | 🆕 | 🆕 | 🆕 | 🆕 | 🆕 | 🆕 | 🆕 | 🆕 | 🆕 | 🆕 | `POST /mcp` |
+Documents dérivés : un document EDI ou IDoc n'est servi que si l'application d'origine expose ce canal (ORDERS/INVOIC et 850/810 viennent de SAP ; DESADV et 856 du TMS ; IDoc ORDERS05 et CREMAS05 de SAP ; DESADV01 (TMS) et MATMAS05 (PIM) sont refusés).
 
-Avant ce lot, GraphQL, SOAP, Kafka, fichiers, batch et webhooks existaient seulement pour les 10 applications historiques (`/api/data/{app}`, jeux de `lib/demo-data.js`), pas pour les 9 applications du SI multi-sources. Ces canaux historiques sont inchangés.
+### Points d'accès par canal
 
-La colonne RH est la source ajoutée pour les cas de crise sanitaire (absentéisme) : elle est servie par tous les canaux génériques (REST, OData v4, GraphQL, SOAP, Salesforce, messagerie, CDC, fichiers, gRPC-web, ESB, MCP), pas par les canaux propres à SAP ou à l'EDI.
+| Canal | Point d'accès |
+|---|---|
+| REST | `/api/sources/{source}?resource=` |
+| OData v2 (SAP) | `/sap/opu/odata/sap/…` |
+| OData v4 | `/odata/v4/{source}/{EntitySet}`, `$metadata` |
+| GraphQL | `/api/graphql` (champ `srcOms`) |
+| SOAP 1.1 | `/api/soap?source=` (`GetRecords`, WSDL typé) |
+| SAP IDoc XML | `/sap/idoc/{ORDERS05, CREMAS05}` |
+| SAP RFC / BAPI (JSON-RPC) | `POST /sap/bc/rfc` |
+| Salesforce REST (SOQL) et Bulk API 2.0 | `/services/data/v60.0/query`, `/jobs/query` |
+| Kafka (HTTP) | `/api/kafka?topic=lucie.{source}.{resource}` |
+| AMQP · RabbitMQ | `POST /api/queues/%2F/{file}/get` |
+| IBM MQ | `/ibmmq/rest/v2/messaging/qmgr/LUCIEQM/queue/{FILE}/message` |
+| CloudEvents / webhooks | `/cloudevents/{source}/{resource}` |
+| CDC (Debezium) | `/cdc/{source}/{resource}` |
+| EDIFACT D.96A | `/edi/edifact/{ORDERS, INVOIC, DESADV}` |
+| ANSI X12 004010 | `/edi/x12/{850, 810, 856}` |
+| AS2 | `/as2/outbox`, `/as2/message/{id}`, `POST /as2` |
+| Fichiers CSV, JSON, XML, Parquet (SFTP) | `/sftp/ls`, `/sftp/get?path=/outbound/…` |
+| SQL / JDBC (lecture seule, lac) | `POST /sql` |
+| Agrégat poussé à la source (lac) | `?aggregate=1&groupBy=` |
+| gRPC-web | `POST /grpc/lucie.v1.RowService/ListRows` |
+| ESB / iPaaS (demi-flux) | `/esb/api/v1/{flux}` |
+| MCP | `POST /mcp` |
+
+Les canaux historiques des 10 applications de `lib/demo-data.js` (`/api/data/{app}`) sont inchangés.
 
 ### Ce qui est simulé
 
@@ -218,7 +233,7 @@ En ligne de commande : `claude mcp add --transport http maison-lucie https://mai
 
 ```bash
 npm run serve:vercel      # routage Vercel reproduit, http://127.0.0.1:4300
-npm run test:channels     # 94 tests : chaque canal redonne les mêmes lignes que REST, pour les 41 ressources
+npm run test:channels     # 95 tests : chaque canal autorisé redonne les mêmes lignes que REST, les autres sont refusés
 ```
 
 ## Champs standard ajoutés (tous les cas d'Aura)
@@ -248,6 +263,22 @@ Pour couvrir la résilience (TTS/TTR), la crise sanitaire, les détroits, la qua
 
 Les détroits ne sont pas un champ : ils se lisent dans les escales (EGSUZ, EGPSD pour le canal de Suez ; ZACPT pour le cap de Bonne-Espérance ; SGSIN pour Malacca).
 
+### Scénarios illustratifs (cas réglés à la main)
+
+Trois cas sont **calibrés à la main** pour que les alertes d'Aura se déclenchent sur la démo. Ils ne reflètent pas une distribution observée. Chaque ligne concernée porte le champ `_scenario: "illustratif"` (les autres lignes de ces tables portent `_scenario: null`), sur tous les canaux ; `scripts/test-alert-cases.mjs` vérifie que seules ces lignes sont marquées.
+
+| Cas | Ce qui a été calibré | Lignes marquées |
+|---|---|---|
+| Fournisseur unique (TTR > TTS) | les 6 articles stockés dont l'écart couverture − (délai + 60 j) est le plus faible n'ont qu'une source approuvée, et le délai planifié de leur source fixe est allongé de l'écart + 10 j | `A_PurchasingSource` (6), `A_PurgInfoRecdOrgPlantData` (6), `A_ProductSupplyPlanning` (6) |
+| Port congestionné | un évènement `CONGESTION` de 4 jours est placé sur le port d'arrivée (Le Havre, FRLEH) de l'expédition maritime ouverte la moins couverte | `events` (1) |
+| Dérive de délai fournisseur | les réceptions des 4 dernières semaines de 0000100003 et 0000100006 arrivent 35 à 50 % plus tard que le délai planifié | `A_MaterialDocumentItem` (réceptions concernées) |
+
+Dans Aura Supply, l'alerte qui en découle porte un badge discret « scénario illustratif », dont l'infobulle dit ce qui a été calibré. Le badge n'apparaît que sur des données Maison Lucie.
+
+D'autres éléments du récit sont aussi posés à la main, sans champ dédié : la hausse du risque financier de SRM-00003 et SRM-00012 (+25 points en 5 mois) et l'absence d'évaluation ESG de SRM-00007, SRM-00015 et SRM-00022.
+
+Les paramètres par défaut d'Aura restent affichés comme **hypothèses à confirmer** avec le client : 60 jours de requalification d'une nouvelle source, 25 % par an de portage du stock, 90 jours de couverture cible, 40 € par client de coût de reprise d'un rappel.
+
 ### Cas reproductibles des alertes d'Aura
 
 `scripts/test-alert-cases.mjs` recalcule chaque règle sur ces tables, indépendamment d'Aura, et vérifie qu'elle se déclenche (11 alertes).
@@ -272,7 +303,7 @@ Le TTS est celui d'Aura : (stock disponible + en transit) / demande journalière
 
 ```bash
 npm run test:multisource   # contrats OData/REST/lac, erreurs volontaires, taille scale à la volée, $metadata, équivalence JS/SQL
-npm run test:channels      # tous les canaux d'échange et MCP : mêmes lignes quel que soit le canal
+npm run test:channels      # canaux autorisés : mêmes lignes ; canaux non autorisés : refus 404
 node scripts/test-extensions.mjs   # champs standard ajoutés : cohérence avec les tables existantes
 node scripts/test-alert-cases.mjs  # un cas reproductible par alerte de résilience d'Aura
 npm test                   # tous les tests (le smoke test demande le serveur local : npm start)

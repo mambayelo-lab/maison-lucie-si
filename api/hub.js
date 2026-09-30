@@ -3,7 +3,7 @@ import { beginRequest, requestHeader, sendError } from "../lib/http-api.js";
 import {
   CACHE_HEADER, GRPC_PROTO, LAKE_TABLES, MAX_PAGE, RESOURCES, SOURCE_IDS, SqlError, amqpGet, cdcPage, channelName, cloudEvent, columnsOf, esbFlow, ESB_FLOWS,
   findResource, grpcDecodeRequest, grpcEncodeResponse, lakeTable, mqBrowse, odata4, odata4Metadata, overRate, parquetPath, parseChannel, parseSql, readRows,
-  renderFile, runSql, sfDescribe, sfObject, soql, sftpListing, sftpResolve, sqlTypeOf,
+  renderFile, runSql, sfDescribe, sfFind, sfObject, soql, sftpListing, sftpResolve, sqlTypeOf, channelAllowed, channelRefusal, channelsOf, PROTOCOLS, CHANNEL_LABELS,
 } from "../lib/channels.js";
 import { AS2_DOCS, EDIFACT_TYPES, IDOC_TYPES, X12_TYPES, as2Message, as2Mdn, edifact, idoc, x12 } from "../lib/edi.js";
 import { DEMO_CREDENTIALS } from "../lib/http-api.js";
@@ -38,6 +38,8 @@ function bodyOf(request) {
   try { return s ? JSON.parse(s) : {}; } catch { return { __raw: s }; }
 }
 const cached = response => response.setHeader("Cache-Control", CACHE_HEADER);
+/** Refus clair (404) quand l'application n'expose pas ce canal ; renvoie true si refusé. */
+const refused = (response, ch, source) => { if (channelAllowed(ch, source)) return false; response.setHeader("Cache-Control", "no-store"); response.status(404).json(channelRefusal(ch, source)); return true; };
 const text = (response, status, type, body) => { response.setHeader("Content-Type", type); return response.status(status).send(body); };
 
 export default async function handler(request, response) {
@@ -62,9 +64,9 @@ export default async function handler(request, response) {
   try {
     switch (ch) {
       case "odata4": return odata4Route(q, response);
-      case "idoc": return docRoute(response, IDOC_TYPES, String(q.type || "").toUpperCase(), q, idoc, "application/xml; charset=utf-8");
-      case "edifact": return docRoute(response, EDIFACT_TYPES, String(q.type || "").toUpperCase(), q, edifact, "application/EDIFACT");
-      case "x12": return docRoute(response, X12_TYPES, String(q.type || ""), q, x12, "application/EDI-X12");
+      case "idoc": return docRoute("idoc", response, IDOC_TYPES, String(q.type || "").toUpperCase(), q, idoc, "application/xml; charset=utf-8");
+      case "edifact": return docRoute("edifact", response, EDIFACT_TYPES, String(q.type || "").toUpperCase(), q, edifact, "application/EDIFACT");
+      case "x12": return docRoute("x12", response, X12_TYPES, String(q.type || ""), q, x12, "application/EDI-X12");
       case "rfc": return rfcRoute(request, response);
       case "sf": return sfRoute(request, q, response);
       case "amqp": return amqpRoute(request, q, response);
@@ -87,7 +89,7 @@ export default async function handler(request, response) {
 export function channelIndex() {
   const ex = RESOURCES.find(r => r.source === "pim");
   return {
-    synthetic: true, asOf: DATASET.asOf, maxPageSize: MAX_PAGE, auth: "Authorization: Bearer lucie_aura_gateway_demo_token (Basic <n'importe quel utilisateur>:<jeton> pour RabbitMQ, IBM MQ, RFC)",
+    synthetic: true, asOf: DATASET.asOf, protocolsNote: "Chaque application ne répond que sur les canaux que ce type d'outil expose réellement (voir sources[].channels) ; un autre canal renvoie 404 CHANNEL_NOT_OFFERED. ESB et MCP sont des passerelles transverses.", channelLabels: CHANNEL_LABELS, maxPageSize: MAX_PAGE, auth: "Authorization: Bearer lucie_aura_gateway_demo_token (Basic <n'importe quel utilisateur>:<jeton> pour RabbitMQ, IBM MQ, RFC)",
     channels: {
       rest: { url: "/api/sources/{source}?resource={resource}", docs: "/api/sources/index" },
       odataV2: { url: "/sap/opu/odata/sap/API_BUSINESS_PARTNER/A_Supplier", apps: ["sap"] },
@@ -112,7 +114,7 @@ export function channelIndex() {
       esb: { url: "/esb/api/v1/{flux}", flows: Object.keys(ESB_FLOWS), route: "/esb/api/v1/route?to={source}&resource={resource}" },
       mcp: { url: "POST /mcp (Streamable HTTP, JSON-RPC 2.0)" },
     },
-    sources: SOURCE_IDS.map(id => ({ id, resources: RESOURCES.filter(r => r.source === id).map(r => ({ resource: r.resource, entitySet: r.entitySet, key: r.key, channel: channelName(r) })) })),
+    sources: SOURCE_IDS.map(id => ({ id, tool: PROTOCOLS[id].tool, channels: channelsOf(id), nativeChannel: channelsOf(id)[0], resources: RESOURCES.filter(r => r.source === id).map(r => ({ resource: r.resource, entitySet: r.entitySet, key: r.key, channel: channelName(r) })) })),
   };
 }
 
@@ -120,6 +122,7 @@ export function channelIndex() {
 function odata4Route(q, response) {
   const source = String(q.source || ""), path = String(q.path || "").replace(/^\/+|\/+$/g, "");
   if (!SOURCE_IDS.includes(source)) return response.status(404).json({ error: { code: "NotFound", message: `Service inconnu : ${source}` } });
+  if (refused(response, "odata4", source)) return;
   response.setHeader("OData-Version", "4.0");
   cached(response);
   const base = `/odata/v4/${source}`;
@@ -132,8 +135,9 @@ function odata4Route(q, response) {
 }
 
 // ── Documents EDI / IDoc ─────────────────────────────────────────────────────
-function docRoute(response, types, type, q, build, contentType) {
-  if (!types[type]) return response.status(404).json({ error: { code: "UNKNOWN_DOCUMENT", message: `Type inconnu : ${type}`, types: Object.keys(types) } });
+function docRoute(ch, response, types, type, q, build, contentType) {
+  if (!types[type]) return response.status(404).json({ error: { code: "UNKNOWN_DOCUMENT", message: `Type inconnu : ${type}`, types: Object.keys(types).filter(t => channelAllowed(ch, types[t].source.split("/")[0])) } });
+  if (refused(response, ch, types[type].source.split("/")[0])) return;
   const doc = build(type, int(q.offset, 0), page(q.limit));
   cached(response);
   response.setHeader("X-Document-Count", String(doc.count));
@@ -204,13 +208,14 @@ const JOBS = /^jobs\/query\/(750[A-Za-z0-9_-]+)(\/results)?$/;
 function sfRoute(request, q, response) {
   const version = String(q.version || "v60.0"), path = String(q.path || "").replace(/^\/+|\/+$/g, "");
   const sfErr = (status, errorCode, message) => response.status(status).json([{ message, errorCode }]);
-  if (path === "sobjects") { cached(response); return response.status(200).json({ encoding: "UTF-8", maxBatchSize: 200, sobjects: RESOURCES.map(d => ({ name: sfObject(d), label: `${d.source} · ${d.entitySet}`, custom: true, queryable: true, urls: { describe: `/services/data/${version}/sobjects/${sfObject(d)}/describe` } })) }); }
+  if (path === "sobjects") { cached(response); return response.status(200).json({ encoding: "UTF-8", maxBatchSize: 200, sobjects: RESOURCES.filter(d => channelAllowed("sf", d.source)).map(d => ({ name: sfObject(d), label: `${d.source} · ${d.entitySet}`, custom: true, queryable: true, urls: { describe: `/services/data/${version}/sobjects/${sfObject(d)}/describe` } })) }); }
   let m;
-  if ((m = /^sobjects\/([A-Za-z0-9_]+)\/describe$/.exec(path))) { const d = RESOURCES.find(x => sfObject(x) === m[1]); if (!d) return sfErr(404, "NOT_FOUND", `The requested resource does not exist`); cached(response); return response.status(200).json(sfDescribe(d, version)); }
+  if ((m = /^sobjects\/([A-Za-z0-9_]+)\/describe$/.exec(path))) { const d = RESOURCES.find(x => sfObject(x) === m[1]); if (!d) return sfErr(404, "NOT_FOUND", `The requested resource does not exist`); if (refused(response, "sf", d.source)) return; cached(response); return response.status(200).json(sfDescribe(d, version)); }
   if (path === "query" || (m = /^query\/(01g[A-Za-z0-9_-]+)$/.exec(path))) {
     let soqlText = q.q, cursor = 0;
     if (m) { try { const dec = JSON.parse(Buffer.from(m[1].slice(3), "base64url").toString("utf8")); soqlText = dec.q; cursor = dec.c; } catch { return sfErr(400, "INVALID_QUERY_LOCATOR", "invalid query locator"); } }
     if (!soqlText) return sfErr(400, "MALFORMED_QUERY", "q requis");
+    { const o = sfFind(/from\s+(\w+)/i.exec(String(soqlText))?.[1]); if (o && refused(response, "sf", o.source)) return; }
     let r; try { r = soql(String(soqlText), version, cursor); } catch (e) { return sfErr(400, "MALFORMED_QUERY", e.message); }
     cached(response);
     return response.status(200).json({ totalSize: r.totalSize, done: r.done, ...(r.done ? {} : { nextRecordsUrl: `/services/data/${version}/query/01g${Buffer.from(JSON.stringify({ q: soqlText, c: r.nextCursor })).toString("base64url")}` }), records: r.records });
@@ -218,6 +223,7 @@ function sfRoute(request, q, response) {
   if (path === "jobs/query" && request.method === "POST") {
     const b = bodyOf(request);
     if (b.operation !== "query" || !b.query) return sfErr(400, "INVALIDJOB", "operation=query et query requis");
+    { const o = sfFind(/from\s+(\w+)/i.exec(String(b.query))?.[1]); if (o && refused(response, "sf", o.source)) return; }
     try { soql(String(b.query), version, 0); } catch (e) { return sfErr(400, "INVALIDJOB", e.message); }
     const id = `750${Buffer.from(JSON.stringify({ q: b.query })).toString("base64url")}`;
     return response.status(200).json({ id, operation: "query", object: /from\s+(\w+)/i.exec(b.query)?.[1], createdById: "005LUCIE", createdDate: `${DATASET.asOf}T00:00:00.000+0000`, state: "UploadComplete", concurrencyMode: "Parallel", contentType: "CSV", apiVersion: Number(version.slice(1)), lineEnding: "LF", columnDelimiter: "COMMA" });
@@ -245,10 +251,11 @@ async function wait(ms) { if (ms > 0) await new Promise(r => setTimeout(r, Math.
 async function amqpRoute(request, q, response) {
   if (!q.queue) {
     cached(response);
-    return response.status(200).json(RESOURCES.map(d => ({ name: channelName(d), vhost: "/", durable: true, auto_delete: false, messages: readRows(d, { limit: 0 }).total, consumers: 0, state: "running", arguments: { "x-queue-type": "classic" } })));
+    return response.status(200).json(RESOURCES.filter(d => channelAllowed("amqp", d.source)).map(d => ({ name: channelName(d), vhost: "/", durable: true, auto_delete: false, messages: readRows(d, { limit: 0 }).total, consumers: 0, state: "running", arguments: { "x-queue-type": "classic" } })));
   }
   const def = parseChannel(q.queue);
   if (!def) return response.status(404).json({ error: "Object Not Found", reason: "Not Found" });
+  if (refused(response, "amqp", def.source)) return;
   if (request.method !== "POST") return response.status(200).json({ name: channelName(def), vhost: decodeURIComponent(String(q.vhost ?? "%2F")), durable: true, messages: readRows(def, { limit: 0 }).total });
   const b = bodyOf(request);
   if (!b.ackmode || !b.encoding) return response.status(400).json({ error: "bad_request", reason: "count, ackmode et encoding requis (API de management RabbitMQ)" });
@@ -260,6 +267,7 @@ async function amqpRoute(request, q, response) {
 async function mqRoute(q, response) {
   const def = parseChannel(String(q.queue || "").toLowerCase());
   if (!def) return response.status(404).json({ error: [{ type: "rest", msgId: "MQWB0009E", message: `MQWB0009E: Could not find the queue '${q.queue}' on queue manager '${q.qmgr}'.`, explanation: "Files : LUCIE.<SOURCE>.<RESSOURCE>", action: "Vérifier le nom de la file." }] });
+  if (refused(response, "mq", def.source)) return;
   const m = mqBrowse(def, int(q.offset, 0));
   if (!m) { await wait(int(q.wait, 0)); return response.status(204).end(); }
   for (const [k, v] of Object.entries(m.headers)) response.setHeader(k, v);
@@ -274,6 +282,7 @@ function resolveRes(q, response) {
 }
 function ceRoute(q, response) {
   const def = resolveRes(q, response); if (!def) return;
+  if (refused(response, "ce", def.source)) return;
   const offset = int(q.offset, 0), r = readRows(def, { offset, limit: page(q.limit) });
   cached(response);
   response.setHeader("X-Next-Offset", String(offset + r.rows.length));
@@ -283,6 +292,7 @@ function ceRoute(q, response) {
 }
 function cdcRoute(q, response) {
   const def = resolveRes(q, response); if (!def) return;
+  if (refused(response, "cdc", def.source)) return;
   cached(response);
   return response.status(200).json(cdcPage(def, int(q.offset, 0), page(q.limit)));
 }
@@ -309,11 +319,15 @@ function as2Route(request, q, response) {
 function sftpRoute(q, response) {
   const op = String(q.op || "ls");
   if (op === "ls") {
+    const src = /^\/outbound\/([a-z]+)/.exec(String(q.path || ""))?.[1];
+    if (src && SOURCE_IDS.includes(src) && refused(response, "sftp", src)) return;
     const entries = sftpListing(String(q.path || "/"), parquetManifest.sizes ?? {});
     if (!entries) return response.status(404).json({ error: { code: "NO_SUCH_FILE", message: `Chemin inconnu : ${q.path}` } });
     cached(response);
     return response.status(200).json({ protocol: "sftp-simulated", path: String(q.path || "/"), entries, longnames: entries.map(e => `${e.permissions} 1 lucie lucie ${String(e.size ?? 0).padStart(9)} ${e.mtime.slice(0, 10)} ${e.name}`) });
   }
+  const src = /^\/outbound\/([a-z]+)/.exec(String(q.path || ""))?.[1];
+  if (src && SOURCE_IDS.includes(src) && refused(response, "sftp", src)) return;
   const f = sftpResolve(String(q.path || ""));
   if (!f) return response.status(404).json({ error: { code: "NO_SUCH_FILE", message: `Fichier inconnu : ${q.path}` } });
   if (f.format === "parquet") { response.setHeader("Location", parquetPath(f.def)); response.setHeader("Cache-Control", CACHE_HEADER); return response.status(302).end(); }
@@ -345,6 +359,7 @@ function grpcRoute(request, response) {
   response.setHeader("Content-Type", "application/grpc-web+proto");
   response.setHeader("Access-Control-Expose-Headers", "grpc-status, grpc-message");
   if (!def) { response.setHeader("grpc-status", "5"); response.setHeader("grpc-message", "resource not found"); return response.status(200).send(Buffer.alloc(0)); }
+  if (!channelAllowed("grpc", def.source)) { response.setHeader("grpc-status", "12"); response.setHeader("grpc-message", encodeURIComponent(channelRefusal("grpc", def.source).error.message)); const t = Buffer.from(`grpc-status:12\r\ngrpc-message:${encodeURIComponent(channelRefusal("grpc", def.source).error.message)}\r\n`), h = Buffer.alloc(5); h[0] = 0x80; h.writeUInt32BE(t.length, 1); return response.status(200).send(Buffer.concat([h, t])); }
   const r = readRows(def, { offset: int(req.page_token, 0), limit: page(req.page_size) });
   response.setHeader("grpc-status", "0");
   return response.status(200).send(grpcEncodeResponse(def, r));

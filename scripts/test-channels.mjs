@@ -1,10 +1,11 @@
-// Tests des canaux d'échange : pour chacune des 21 ressources des 9 applications,
-// les lignes lues par chaque canal sont identiques à la lecture REST de référence.
+// Tests des canaux d'échange : pour chaque ressource, les lignes lues par chaque canal
+// AUTORISÉ pour l'application (protocoles réalistes, PROTOCOLS) sont identiques à la
+// lecture REST de référence ; un canal non autorisé est refusé clairement (404).
 // Lance le serveur local (routage Vercel, réécritures comprises) et l'arrête par PID.
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { DuckDBInstance } from "@duckdb/node-api";
-import { RESOURCES, allRows, columnsOf, recordTag, decodeFields, grpcEncodeRequest, overRate, parseSql, runSql, lakeTable, SqlError, cdcEvents, MAX_PAGE } from "../lib/channels.js";
+import { RESOURCES, allRows, columnsOf, recordTag, decodeFields, grpcEncodeRequest, overRate, parseSql, runSql, lakeTable, SqlError, cdcEvents, MAX_PAGE, channelAllowed, PROTOCOLS } from "../lib/channels.js";
 import { edifact, x12, idoc, parseEdifact, parseX12, as2Mdn, mic } from "../lib/edi.js";
 import { handleMessage } from "../lib/mcp.js";
 import { camel, plural as pluralOf } from "../lib/access.js";
@@ -26,6 +27,13 @@ async function drain(fetchPage) { const out = []; for (let off = 0; ;) { const {
 
 try {
   await ok("index des canaux public", async () => { const r = await fetch(`${BASE}/channels`); const j = await r.json(); assert.ok(j.channels.mcp && j.channels.edifact && j.channels.grpcWeb); assert.equal(j.maxPageSize, 1000); });
+  await ok("protocoles réalistes : matrice et index par application", async () => {
+    const j = await (await fetch(`${BASE}/channels`)).json();
+    assert.deepEqual(j.sources.find(x => x.id === "sap").nativeChannel, "odataV2");
+    assert.equal(j.sources.find(x => x.id === "lake").nativeChannel, "sql");
+    for (const x of j.sources) { assert.deepEqual(x.channels.slice(0, PROTOCOLS[x.id].channels.length), PROTOCOLS[x.id].channels); assert.ok(x.channels.includes("mcp") && x.channels.includes("esb")); }
+    assert.equal((await fetch(`${BASE}/odata/v4/pim/Products`, { headers: AUTH })).status, 404);
+  });
   await ok("authentification exigée (401) et plafond de requêtes", async () => {
     assert.equal((await fetch(`${BASE}/odata/v4/pim/Products`)).status, 401);
     assert.equal((await fetch(`${BASE}/mcp`, { method: "POST", body: "{}" })).status, 401);
@@ -35,6 +43,7 @@ try {
 
   for (const def of RESOURCES) {
     const ref = allRows(def), ALL = ref.length, id = `${def.source}/${def.resource}`;
+    const CH = { rest: "rest", odata4: "odata4", graphql: "graphql", soap: "soap", salesforce: "sf", kafka: "kafka", amqp: "amqp", cloudevents: "ce", sftpJson: "sftp", sftpXml: "sftp", esb: "esb", mcp: "mcp" };
     const typed = {
       rest: () => drain(async off => { const j = await json(`/api/sources/${def.source}?${def.source === "sap" ? `entity=${def.resource}&$top=1000&$skip=${off}` : def.source === "manhattan" ? `resource=${def.resource}&size=1000&page=${off / 1000}` : `resource=${def.resource}&limit=1000&cursor=${off}`}`); const rows = j.d?.results ?? j.data ?? j.items; return { rows, next: rows.length === 1000 ? off + 1000 : null }; }),
       odata4: () => drain(async off => { const j = await json(`/odata/v4/${def.source}/${def.entitySet}?$top=1000&$skip=${off}`); return { rows: j.value, next: j["@odata.nextLink"] ? off + 1000 : null }; }),
@@ -49,26 +58,58 @@ try {
       esb: () => drain(async off => { const j = await json(`/esb/api/v1/route?to=${def.source}&resource=${def.resource}&offset=${off}&limit=1000`); return { rows: j.data, next: j.meta.pagination.nextOffset }; }),
       mcp: () => drain(async off => { const j = await post("/mcp", { jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "query", arguments: { source: def.source, resource: def.resource, limit: 1000, offset: off } } }); const s = j.result.structuredContent; return { rows: s.rows, next: s.nextOffset }; }),
     };
-    await ok(`${id} (${ALL} lignes) : REST, OData v4, GraphQL, SOAP, Salesforce, Kafka, AMQP, CloudEvents, fichiers JSON/XML, ESB, MCP identiques`, async () => {
+    // Sonde d'un canal non autorisé : 404 CHANNEL_NOT_OFFERED (GraphQL : champ absent du schéma).
+    const probe = {
+      odata4: () => fetch(`${BASE}/odata/v4/${def.source}/${def.entitySet}?$top=1`, { headers: AUTH }),
+      soap: () => fetch(`${BASE}/api/soap?source=${def.source}`, { method: "POST", headers: { ...AUTH, "Content-Type": "text/xml" }, body: `<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/"><soap:Body><GetRecords><resource>${def.resource}</resource></GetRecords></soap:Body></soap:Envelope>` }),
+      salesforce: () => fetch(`${BASE}/services/data/v60.0/query?q=${encodeURIComponent(`SELECT ${columnsOf(def)[0].name} FROM Lucie_${def.source[0].toUpperCase()}${def.source.slice(1)}_${def.entitySet}__c`)}`, { headers: AUTH }),
+      kafka: () => fetch(`${BASE}/api/kafka?topic=lucie.${def.source}.${def.resource}&limit=1`, { headers: AUTH }),
+      amqp: () => fetch(`${BASE}/api/queues/%2F/lucie.${def.source}.${def.resource}/get`, { method: "POST", headers: { ...AUTH, "Content-Type": "application/json" }, body: JSON.stringify({ count: 1, ackmode: "ack_requeue_true", encoding: "auto" }) }),
+      cloudevents: () => fetch(`${BASE}/cloudevents/${def.source}/${def.resource}?limit=1`, { headers: AUTH }),
+      sftpJson: () => fetch(`${BASE}/sftp/get?path=/outbound/${def.source}/${def.resource}.json`, { headers: AUTH }),
+    };
+    const allowedNames = Object.keys(typed).filter(k => channelAllowed(CH[k], def.source) || (k === "rest"));
+    await ok(`${id} (${ALL} lignes) : canaux autorisés identiques (${allowedNames.join(", ")}), autres refusés`, async () => {
       for (const [name, read] of Object.entries(typed)) {
+        if (!allowedNames.includes(name)) {
+          if (name === "graphql") { const j = await post("/api/graphql", { query: `{ ${camel(`src-${def.source}`)} { __typename } }` }); assert.ok(j.errors?.length, `${id} GraphQL devrait être refusé`); continue; }
+          if (!probe[name]) continue;
+          const r = await probe[name]();
+          assert.equal(r.status, 404, `${id} via ${name} devrait être refusé`);
+          const body = await r.text();
+          if (name !== "soap") assert.match(body, /CHANNEL_NOT_OFFERED/, `${id} via ${name}`); else assert.match(body, /n'est pas exposé/);
+          continue;
+        }
         const rows = await read();
         assert.deepEqual(rows, ref, `${id} via ${name}`);
       }
-      const csv = await (await get(`/sftp/get?path=/outbound/${def.source}/${def.resource}.csv`)).text();
-      const lines = csv.trim().split("\n"), head = lines[0].split(",");
-      assert.equal(lines.length - 1, ALL, `${id} CSV`);
-      assert.deepEqual(head, columnsOf(def).map(c => c.name));
+      if (channelAllowed("sftp", def.source)) {
+        const csv = await (await get(`/sftp/get?path=/outbound/${def.source}/${def.resource}.csv`)).text();
+        const lines = csv.trim().split("\n"), head = lines[0].split(",");
+        assert.equal(lines.length - 1, ALL, `${id} CSV`);
+        assert.deepEqual(head, columnsOf(def).map(c => c.name));
+      }
     });
-    await ok(`${id} : CDC Debezium rejoué = table ; MQ et gRPC-web (texte) identiques`, async () => {
+    await ok(`${id} : CDC, MQ et gRPC-web identiques s'ils sont offerts, refusés sinon`, async () => {
+      if (!channelAllowed("cdc", def.source)) assert.equal((await fetch(`${BASE}/cdc/${def.source}/${def.resource}?limit=1`, { headers: AUTH })).status, 404);
+      else {
       const events = await drain(async off => { const j = await json(`/cdc/${def.source}/${def.resource}?offset=${off}&limit=1000`); return { rows: j.messages, next: j.hasMore ? j.nextOffset : null }; });
       assert.deepEqual(events.map(m => [m.value.op, m.value.after]), cdcEvents(def).map(e => [e.op, e.after]));
       // Rejeu : r/c créent, u remplace ; clé = rang d'origine (les clés peuvent se répéter volontairement : EAN en double…).
       const replay = new Map();
       for (const e of cdcEvents(def)) { if (e.op === "u") assert.deepEqual(replay.get(e.i), e.before); replay.set(e.i, e.after); }
       assert.deepEqual([...replay.keys()].sort((a, b) => a - b).map(i => replay.get(i)), ref);
+      }
+      if (!channelAllowed("mq", def.source)) assert.equal((await fetch(`${BASE}/ibmmq/rest/v2/messaging/qmgr/LUCIEQM/queue/LUCIE.${def.source.toUpperCase()}.${def.resource.toUpperCase()}/message?offset=0`, { headers: AUTH })).status, 404);
+      else {
       // MQ : 3 messages (début, milieu, fin).
       for (const off of [0, Math.floor(ALL / 2), ALL - 1]) { const r = await get(`/ibmmq/rest/v2/messaging/qmgr/LUCIEQM/queue/LUCIE.${def.source.toUpperCase()}.${def.resource.toUpperCase()}/message?offset=${off}`); assert.deepEqual(await r.json(), ref[off]); }
       assert.equal((await fetch(`${BASE}/ibmmq/rest/v2/messaging/qmgr/LUCIEQM/queue/LUCIE.${def.source.toUpperCase()}.${def.resource.toUpperCase()}/message?offset=${ALL}`, { headers: AUTH })).status, 204);
+      }
+      if (!channelAllowed("grpc", def.source)) {
+        const r = await get("/grpc/lucie.v1.RowService/ListRows", { method: "POST", headers: { "Content-Type": "application/grpc-web+proto" }, body: grpcEncodeRequest({ source: def.source, resource: def.resource, page_size: 1, page_token: "" }) });
+        assert.equal(r.headers.get("grpc-status"), "12"); return;
+      }
       // gRPC-web : décodage protobuf à la main.
       const rows = await drain(async off => {
         const r = await get("/grpc/lucie.v1.RowService/ListRows", { method: "POST", headers: { "Content-Type": "application/grpc-web+proto" }, body: grpcEncodeRequest({ source: def.source, resource: def.resource, page_size: 1000, page_token: off ? String(off) : "" }) });
@@ -83,7 +124,7 @@ try {
 
   await ok("Parquet (dépôt SFTP) identique, lu par DuckDB", async () => {
     const db = await (await DuckDBInstance.create(":memory:")).connect();
-    for (const def of RESOURCES) {
+    for (const def of RESOURCES.filter(d => channelAllowed("sftp", d.source))) {
       const r = await fetch(`${BASE}/sftp/get?path=/outbound/${def.source}/${def.resource}.parquet`, { headers: AUTH, redirect: "manual" });
       assert.equal(r.status, 302);
       const file = new URL(`..${r.headers.get("location")}`, import.meta.url).pathname;
@@ -156,11 +197,13 @@ try {
     }
     assert.equal(x12("999"), null);
   });
-  await ok("IDoc XML : ORDERS05, DESADV01, CREMAS05, MATMAS05 (EDI_DC40, segments réels)", async () => {
+  await ok("IDoc XML : ORDERS05, CREMAS05 (EDI_DC40, segments réels) ; DESADV01 et MATMAS05 refusés (TMS, PIM)", async () => {
     const x = await (await get("/sap/idoc/ORDERS05?limit=5")).text();
     assert.equal((x.match(/<IDOC BEGIN="1">/g) || []).length, 5);
     assert.deepEqual([...x.matchAll(/<E1EDK01 SEGMENT="1"><CURCY>\w+<\/CURCY><BELNR>(\d+)<\/BELNR>/g)].map(m => m[1]), allRows(RESOURCES[1]).slice(0, 5).map(p => p.PurchaseOrder));
-    for (const t of ["DESADV01", "CREMAS05", "MATMAS05"]) assert.match(idoc(t, 0, 1).text, new RegExp(`<IDOCTYP>${t}</IDOCTYP>`));
+    for (const t of ["CREMAS05", "MATMAS05"]) assert.match(idoc(t, 0, 1).text, new RegExp(`<IDOCTYP>${t}</IDOCTYP>`));
+    // DESADV01 viendrait du TMS, qui n'expose pas d'IDoc ; MATMAS05 vient du PIM, qui n'en expose pas non plus.
+    const d = await fetch(`${BASE}/sap/idoc/DESADV01?limit=1`, { headers: AUTH }); assert.equal(d.status, 404); assert.match(await d.text(), /CHANNEL_NOT_OFFERED/);
     assert.deepEqual([...idoc("CREMAS05", 0, 1000).text.matchAll(/<LIFNR>(\d+)<\/LIFNR>/g)].map(m => m[1]), allRows(RESOURCES[0]).map(s => s.Supplier));
   });
   await ok("AS2 : boîte d'envoi, en-têtes, MIC SHA-256 et MDN synchrone", async () => {
@@ -194,8 +237,8 @@ try {
     assert.equal((await fetch(`${BASE}/mcp`, { method: "POST", headers: { ...AUTH, "Content-Type": "application/json" }, body: JSON.stringify({ jsonrpc: "2.0", method: "notifications/initialized" }) })).status, 202);
   });
   await ok("Budget : pages plafonnées à 1 000, en-têtes de cache sur les lectures", async () => {
-    const r = await get("/odata/v4/lake/Sales?$top=5000");
-    assert.equal((await r.json()).value.length, 1000);
+    const r = await get("/cloudevents/oms/order-lines?limit=5000");
+    assert.equal((await r.json()).length, 1000);
     assert.match(r.headers.get("cache-control"), /s-maxage=3600/);
     assert.equal((await json(`/api/kafka?topic=lucie.lake.sales&limit=1000`)).messages.length, 1000);
   });

@@ -2,7 +2,7 @@ import { beginRequest, authenticateApplication, authorizeApplication, requestHea
 import { readAllDatasets } from "../lib/persistence.js";
 import { APP_IDS, applyFilter, plural, tableNames, tableRecords } from "../lib/access.js";
 import { applications } from "../lib/demo-data.js";
-import { CACHE_HEADER, MAX_PAGE, RESOURCES, SOURCE_IDS, columnsOf, findResource, readRows, recordTag, rowXml } from "../lib/channels.js";
+import { CACHE_HEADER, MAX_PAGE, RESOURCES, SOURCE_IDS, channelAllowed, channelRefusal, columnsOf, findResource, readRows, recordTag, rowXml } from "../lib/channels.js";
 import { authenticateGateway as gatewayToken } from "../lib/http-api.js";
 
 // SOAP 1.1 multi-application.
@@ -144,6 +144,7 @@ function multiWsdl(source) {
 function multiSource(request, response, ctx, params, url) {
   const source = String(params.source);
   if (!SOURCE_IDS.includes(source)) return fault(response, 404, "Client", `Unknown source "${source}" (${SOURCE_IDS.join(", ")}).`);
+  if (!channelAllowed("soap", source)) return fault(response, 404, "Client", channelRefusal("soap", source).error.message);
   if (request.method === "GET") {
     if (params.wsdl === undefined && !url.searchParams.has("wsdl")) return fault(response, 400, "Client", "Use GET ?wsdl&source= for discovery or POST a SOAP 1.1 envelope.");
     response.setHeader("Content-Type", "text/xml; charset=utf-8");
